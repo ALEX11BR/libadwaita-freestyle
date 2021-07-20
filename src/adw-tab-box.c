@@ -2109,7 +2109,7 @@ remove_placeholder (AdwTabBox *self)
 static inline AdwTabBox *
 get_source_tab_box (GtkDropTarget *target)
 {
-  GdkDrop *drop = gtk_drop_target_get_drop (target);
+  GdkDrop *drop = gtk_drop_target_get_current_drop (target);
   GdkDrag *drag = gdk_drop_get_drag (drop);
 
   if (!drag)
