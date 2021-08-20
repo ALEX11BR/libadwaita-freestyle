@@ -32,10 +32,6 @@ int  adw_tab_get_display_width (AdwTab *self);
 void adw_tab_set_display_width (AdwTab *self,
                                 int     width);
 
-gboolean adw_tab_get_hovering (AdwTab   *self);
-void     adw_tab_set_hovering (AdwTab   *self,
-                               gboolean  hovering);
-
 gboolean adw_tab_get_dragging (AdwTab   *self);
 void     adw_tab_set_dragging (AdwTab   *self,
                                gboolean  dragging);
