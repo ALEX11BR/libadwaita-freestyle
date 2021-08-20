@@ -824,12 +824,8 @@ adw_tab_class_init (AdwTabClass *klass)
   gtk_widget_class_bind_template_child (widget_class, AdwTab, indicator_icon);
   gtk_widget_class_bind_template_child (widget_class, AdwTab, indicator_btn);
   gtk_widget_class_bind_template_child (widget_class, AdwTab, close_btn);
-  gtk_widget_class_bind_template_child (widget_class, AdwTab, drop_target);
   gtk_widget_class_bind_template_callback (widget_class, close_clicked_cb);
   gtk_widget_class_bind_template_callback (widget_class, indicator_clicked_cb);
-  gtk_widget_class_bind_template_callback (widget_class, motion_cb);
-  gtk_widget_class_bind_template_callback (widget_class, leave_cb);
-  gtk_widget_class_bind_template_callback (widget_class, drop_cb);
 
   gtk_widget_class_add_binding (widget_class, GDK_KEY_space,     0, (GtkShortcutFunc) activate_cb, NULL);
   gtk_widget_class_add_binding (widget_class, GDK_KEY_KP_Space,  0, (GtkShortcutFunc) activate_cb, NULL);
@@ -843,9 +839,16 @@ adw_tab_class_init (AdwTabClass *klass)
 static void
 adw_tab_init (AdwTab *self)
 {
+  GtkEventController *controller;
+
   g_type_ensure (ADW_TYPE_FADING_LABEL);
 
   gtk_widget_init_template (GTK_WIDGET (self));
+
+  controller = gtk_event_controller_motion_new ();
+  g_signal_connect_swapped (controller, "motion", G_CALLBACK (motion_cb), self);
+  g_signal_connect_swapped (controller, "leave", G_CALLBACK (leave_cb), self);
+  gtk_widget_add_controller (GTK_WIDGET (self), controller);
 }
 
 AdwTab *
@@ -1034,6 +1037,13 @@ adw_tab_setup_extra_drop_target (AdwTab        *self,
   g_return_if_fail (ADW_IS_TAB (self));
   g_return_if_fail (n_types == 0 || types != NULL);
 
-  gtk_drop_target_set_actions (self->drop_target, actions);
+  if (!self->drop_target) {
+    self->drop_target = gtk_drop_target_new (G_TYPE_INVALID, actions);
+    g_signal_connect_swapped (self->drop_target, "drop", G_CALLBACK (drop_cb), self);
+    gtk_widget_add_controller (GTK_WIDGET (self), GTK_EVENT_CONTROLLER (self->drop_target));
+  } else {
+    gtk_drop_target_set_actions (self->drop_target, actions);
+  }
+
   gtk_drop_target_set_gtypes (self->drop_target, types, n_types);
 }
