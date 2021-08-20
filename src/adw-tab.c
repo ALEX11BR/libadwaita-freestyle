@@ -22,7 +22,7 @@
 
 struct _AdwTab
 {
-  GtkWidget parent_instance;
+  AdwTabItem parent_instance;
 
   GtkWidget *title;
   GtkWidget *icon_stack;
@@ -33,19 +33,10 @@ struct _AdwTab
   GtkWidget *close_btn;
   GtkDropTarget *drop_target;
 
-  AdwTabView *view;
-  AdwTabPage *page;
-  gboolean pinned;
-  gboolean dragging;
-  int display_width;
-
-  gboolean hovering;
   gboolean selected;
-  gboolean inverted;
   gboolean title_inverted;
   gboolean close_overlap;
   gboolean show_close;
-  gboolean fully_visible;
 
   AdwAnimation *close_btn_animation;
 
@@ -53,27 +44,7 @@ struct _AdwTab
   gboolean shader_compiled;
 };
 
-G_DEFINE_TYPE (AdwTab, adw_tab, GTK_TYPE_WIDGET)
-
-enum {
-  PROP_0,
-  PROP_VIEW,
-  PROP_PINNED,
-  PROP_DRAGGING,
-  PROP_PAGE,
-  PROP_DISPLAY_WIDTH,
-  PROP_INVERTED,
-  LAST_PROP
-};
-
-static GParamSpec *props[LAST_PROP];
-
-enum {
-  SIGNAL_EXTRA_DRAG_DROP,
-  SIGNAL_LAST_SIGNAL,
-};
-
-static guint signals[SIGNAL_LAST_SIGNAL];
+G_DEFINE_TYPE (AdwTab, adw_tab, ADW_TYPE_TAB_ITEM)
 
 static inline void
 set_style_class (GtkWidget  *widget,
@@ -108,19 +79,22 @@ update_state (AdwTab *self)
 {
   GtkStateFlags new_state;
   gboolean show_close;
+  gboolean dragging = adw_tab_item_get_dragging (ADW_TAB_ITEM (self));
+  gboolean hovering = adw_tab_item_get_hovering (ADW_TAB_ITEM (self));
+  gboolean fully_visible = adw_tab_item_get_fully_visible (ADW_TAB_ITEM (self));
 
   new_state = gtk_widget_get_state_flags (GTK_WIDGET (self)) &
     ~(GTK_STATE_FLAG_PRELIGHT | GTK_STATE_FLAG_CHECKED);
 
-  if (self->dragging)
+  if (dragging)
     new_state |= GTK_STATE_FLAG_PRELIGHT;
 
-  if (self->selected || self->dragging)
+  if (self->selected || dragging)
     new_state |= GTK_STATE_FLAG_CHECKED;
 
   gtk_widget_set_state_flags (GTK_WIDGET (self), new_state, TRUE);
 
-  show_close = (self->hovering && self->fully_visible) || self->selected || self->dragging;
+  show_close = (hovering && fully_visible) || self->selected || dragging;
 
   if (self->show_close != show_close) {
     double opacity = gtk_widget_get_opacity (self->close_btn);
@@ -150,19 +124,21 @@ update_state (AdwTab *self)
 static void
 update_tooltip (AdwTab *self)
 {
-  const char *tooltip = adw_tab_page_get_tooltip (self->page);
+  AdwTabPage *page = adw_tab_item_get_page (ADW_TAB_ITEM (self));
+  const char *tooltip = adw_tab_page_get_tooltip (page);
 
   if (tooltip && g_strcmp0 (tooltip, "") != 0)
     gtk_widget_set_tooltip_markup (GTK_WIDGET (self), tooltip);
   else
     gtk_widget_set_tooltip_text (GTK_WIDGET (self),
-                                 adw_tab_page_get_title (self->page));
+                                 adw_tab_page_get_title (page));
 }
 
 static void
 update_title (AdwTab *self)
 {
-  const char *title = adw_tab_page_get_title (self->page);
+  AdwTabPage *page = adw_tab_item_get_page (ADW_TAB_ITEM (self));
+  const char *title = adw_tab_page_get_title (page);
   PangoDirection title_direction = PANGO_DIRECTION_NEUTRAL;
   GtkTextDirection direction = gtk_widget_get_direction (GTK_WIDGET (self));
   gboolean title_inverted;
@@ -185,7 +161,8 @@ update_title (AdwTab *self)
 static void
 update_spinner (AdwTab *self)
 {
-  gboolean loading = self->page && adw_tab_page_get_loading (self->page);
+  AdwTabPage *page = adw_tab_item_get_page (ADW_TAB_ITEM (self));
+  gboolean loading = page && adw_tab_page_get_loading (page);
   gboolean mapped = gtk_widget_get_mapped (GTK_WIDGET (self));
 
   /* Don't use CPU when not needed */
@@ -195,18 +172,21 @@ update_spinner (AdwTab *self)
 static void
 update_icons (AdwTab *self)
 {
-  GIcon *gicon = adw_tab_page_get_icon (self->page);
-  gboolean loading = adw_tab_page_get_loading (self->page);
-  GIcon *indicator = adw_tab_page_get_indicator_icon (self->page);
+  AdwTabView *view = adw_tab_item_get_view (ADW_TAB_ITEM (self));
+  AdwTabPage *page = adw_tab_item_get_page (ADW_TAB_ITEM (self));
+  gboolean pinned = adw_tab_item_get_pinned (ADW_TAB_ITEM (self));
+  GIcon *gicon = adw_tab_page_get_icon (page);
+  gboolean loading = adw_tab_page_get_loading (page);
+  GIcon *indicator = adw_tab_page_get_indicator_icon (page);
   const char *name = loading ? "spinner" : "icon";
 
-  if (self->pinned && !gicon)
-    gicon = adw_tab_view_get_default_icon (self->view);
+  if (pinned && !gicon)
+    gicon = adw_tab_view_get_default_icon (view);
 
   gtk_image_set_from_gicon (self->icon, gicon);
   gtk_widget_set_visible (self->icon_stack,
                           (gicon != NULL || loading) &&
-                          (!self->pinned || indicator == NULL));
+                          (!pinned || indicator == NULL));
   gtk_stack_set_visible_child_name (GTK_STACK (self->icon_stack), name);
 
   gtk_widget_set_visible (self->indicator_btn, indicator != NULL);
@@ -215,8 +195,11 @@ update_icons (AdwTab *self)
 static void
 update_indicator (AdwTab *self)
 {
-  gboolean activatable = self->page && adw_tab_page_get_indicator_activatable (self->page);
-  gboolean clickable = activatable && (self->selected || (!self->pinned && self->fully_visible));
+  AdwTabPage *page = adw_tab_item_get_page (ADW_TAB_ITEM (self));
+  gboolean pinned = adw_tab_item_get_pinned (ADW_TAB_ITEM (self));
+  gboolean fully_visible = adw_tab_item_get_fully_visible (ADW_TAB_ITEM (self));
+  gboolean activatable = page && adw_tab_page_get_indicator_activatable (page);
+  gboolean clickable = activatable && (self->selected || (!pinned && fully_visible));
 
   gtk_widget_set_can_target (self->indicator_btn, clickable);
 }
@@ -224,98 +207,61 @@ update_indicator (AdwTab *self)
 static void
 update_needs_attention (AdwTab *self)
 {
+  AdwTabPage *page = adw_tab_item_get_page (ADW_TAB_ITEM (self));
+
   set_style_class (GTK_WIDGET (self), "needs-attention",
-                   adw_tab_page_get_needs_attention (self->page));
+                   adw_tab_page_get_needs_attention (page));
 }
 
 static void
 update_loading (AdwTab *self)
 {
+  AdwTabPage *page = adw_tab_item_get_page (ADW_TAB_ITEM (self));
+
   update_icons (self);
   update_spinner (self);
   set_style_class (GTK_WIDGET (self), "loading",
-                   adw_tab_page_get_loading (self->page));
+                   adw_tab_page_get_loading (page));
 }
 
 static void
 update_selected (AdwTab *self)
 {
-  self->selected = self->dragging;
+  AdwTabPage *page = adw_tab_item_get_page (ADW_TAB_ITEM (self));
 
-  if (self->page)
-    self->selected |= adw_tab_page_get_selected (self->page);
+  self->selected = adw_tab_item_get_dragging (ADW_TAB_ITEM (self));
+
+  if (page)
+    self->selected |= adw_tab_page_get_selected (page);
 
   update_state (self);
   update_indicator (self);
 }
 
-static gboolean
-close_idle_cb (AdwTab *self)
+static void
+notify_dragging_cb (AdwTab *self)
 {
-  adw_tab_view_close_page (self->view, self->page);
+  update_state (self);
+  update_selected (self);
+}
 
-  return G_SOURCE_REMOVE;
+static void
+notify_fully_visible_cb (AdwTab *self)
+{
+  update_state (self);
+  update_indicator (self);
 }
 
 static void
 close_clicked_cb (AdwTab *self)
 {
-  if (!self->page)
-    return;
-
-  /* When animations are disabled, we don't want to immediately remove the
-   * whole tab mid-click. Instead, defer it until the click has happened.
-   */
-  g_idle_add ((GSourceFunc) close_idle_cb, self);
+  adw_tab_item_close (ADW_TAB_ITEM (self));
 }
 
 static void
 indicator_clicked_cb (AdwTab *self)
 {
-  if (!self->page)
-    return;
-
-  g_signal_emit_by_name (self->view, "indicator-activated", self->page);
-}
-
-static void
-motion_cb (AdwTab             *self,
-           double              x,
-           double              y,
-           GtkEventController *controller)
-{
-  GdkDevice *device = gtk_event_controller_get_current_event_device (controller);
-  GdkInputSource input_source = gdk_device_get_source (device);
-
-  if (input_source == GDK_SOURCE_TOUCHSCREEN)
-    return;
-
-  if (self->hovering)
-    return;
-
-  self->hovering = TRUE;
-
-  update_state (self);
-}
-
-static void
-leave_cb (AdwTab             *self,
-          GtkEventController *controller)
-{
-  self->hovering = FALSE;
-
-  update_state (self);
-}
-
-static gboolean
-drop_cb (AdwTab *self,
-         GValue *value)
-{
-  gboolean ret = GDK_EVENT_PROPAGATE;
-
-  g_signal_emit (self, signals[SIGNAL_EXTRA_DRAG_DROP], 0, value, &ret);
-
-  return ret;
+  adw_tab_item_activate_indicator (ADW_TAB_ITEM (self));
 }
 
 static void
@@ -343,20 +289,61 @@ ensure_shader (AdwTab *self)
   }
 }
 
-static gboolean
-activate_cb (AdwTab   *self,
-             GVariant *args)
+static void
+adw_tab_connect_page (AdwTabItem *item)
 {
-  GtkWidget *child;
+  AdwTab *self = ADW_TAB (item);
+  AdwTabPage *page = adw_tab_item_get_page (item);
 
-  if (!self->page || !self->view)
-    return GDK_EVENT_PROPAGATE;
+  update_selected (self);
+  update_state (self);
+  update_title (self);
+  update_tooltip (self);
+  update_spinner (self);
+  update_icons (self);
+  update_indicator (self);
+  update_needs_attention (self);
+  update_loading (self);
 
-  child = adw_tab_page_get_child (self->page);
+  g_signal_connect_object (page, "notify::selected",
+                           G_CALLBACK (update_selected), self,
+                           G_CONNECT_SWAPPED);
+  g_signal_connect_object (page, "notify::title",
+                           G_CALLBACK (update_title), self,
+                           G_CONNECT_SWAPPED);
+  g_signal_connect_object (page, "notify::tooltip",
+                           G_CALLBACK (update_tooltip), self,
+                           G_CONNECT_SWAPPED);
+  g_signal_connect_object (page, "notify::icon",
+                           G_CALLBACK (update_icons), self,
+                           G_CONNECT_SWAPPED);
+  g_signal_connect_object (page, "notify::indicator-icon",
+                           G_CALLBACK (update_icons), self,
+                           G_CONNECT_SWAPPED);
+  g_signal_connect_object (page, "notify::indicator-activatable",
+                           G_CALLBACK (update_indicator), self,
+                           G_CONNECT_SWAPPED);
+  g_signal_connect_object (page, "notify::needs-attention",
+                           G_CALLBACK (update_needs_attention), self,
+                           G_CONNECT_SWAPPED);
+  g_signal_connect_object (page, "notify::loading",
+                           G_CALLBACK (update_loading), self,
+                           G_CONNECT_SWAPPED);
+}
 
-  gtk_widget_grab_focus (child);
+static void
+adw_tab_disconnect_page (AdwTabItem *item)
+{
+  AdwTab *self = ADW_TAB (item);
+  AdwTabPage *page = adw_tab_item_get_page (item);
 
-  return GDK_EVENT_STOP;
+  g_signal_handlers_disconnect_by_func (page, update_selected, self);
+  g_signal_handlers_disconnect_by_func (page, update_title, self);
+  g_signal_handlers_disconnect_by_func (page, update_tooltip, self);
+  g_signal_handlers_disconnect_by_func (page, update_icons, self);
+  g_signal_handlers_disconnect_by_func (page, update_indicator, self);
+  g_signal_handlers_disconnect_by_func (page, update_needs_attention, self);
+  g_signal_handlers_disconnect_by_func (page, update_loading, self);
 }
 
 static void
@@ -369,10 +356,11 @@ adw_tab_measure (GtkWidget      *widget,
                  int            *natural_baseline)
 {
   AdwTab *self = ADW_TAB (widget);
+  gboolean pinned = adw_tab_item_get_pinned (ADW_TAB_ITEM (self));
   int min = 0, nat = 0;
 
   if (orientation == GTK_ORIENTATION_HORIZONTAL) {
-    nat = self->pinned ? BASE_WIDTH_PINNED : BASE_WIDTH;
+    nat = pinned ? BASE_WIDTH_PINNED : BASE_WIDTH;
   } else {
     int child_min, child_nat;
 
@@ -445,6 +433,7 @@ allocate_contents (AdwTab        *self,
   int indicator_width, close_width, icon_width, title_width;
   int center_x, center_width = 0;
   int start_width = 0, end_width = 0;
+  gboolean inverted = adw_tab_item_get_inverted (ADW_TAB_ITEM (self));
 
   measure_child (self->icon_stack, alloc->height, &icon_width);
   measure_child (self->title, alloc->height, &title_width);
@@ -452,12 +441,12 @@ allocate_contents (AdwTab        *self,
   measure_child (self->close_btn, alloc->height, &close_width);
 
   if (gtk_widget_get_visible (self->indicator_btn)) {
-    if (self->pinned) {
+    if (adw_tab_item_get_pinned (ADW_TAB_ITEM (self))) {
       /* Center it in a pinned tab */
       allocate_child (self->indicator_btn, alloc,
                       (alloc->width - indicator_width) / 2, indicator_width,
                       baseline);
-    } else if (self->inverted) {
+    } else if (inverted) {
       allocate_child (self->indicator_btn, alloc,
                       alloc->width - indicator_width, indicator_width,
                       baseline);
@@ -471,7 +460,7 @@ allocate_contents (AdwTab        *self,
   }
 
   if (gtk_widget_get_visible (self->close_btn)) {
-    if (self->inverted) {
+    if (inverted) {
       allocate_child (self->close_btn, alloc, 0, close_width, baseline);
 
       start_width = close_width;
@@ -490,7 +479,7 @@ allocate_contents (AdwTab        *self,
                     start_width,
                     alloc->width - center_width - end_width);
 
-  self->close_overlap = !self->inverted &&
+  self->close_overlap = !inverted &&
                         !self->title_inverted &&
                         gtk_widget_get_visible (self->title) &&
                         gtk_widget_get_visible (self->close_btn) &&
@@ -514,6 +503,7 @@ adw_tab_size_allocate (GtkWidget *widget,
                        int        baseline)
 {
   AdwTab *self = ADW_TAB (widget);
+  int display_width = adw_tab_item_get_display_width (ADW_TAB_ITEM (self));
   GtkAllocation child_alloc;
   int allocated_width, width_diff;
 
@@ -524,7 +514,7 @@ adw_tab_size_allocate (GtkWidget *widget,
     return;
 
   allocated_width = gtk_widget_get_allocated_width (widget);
-  width_diff = MAX (0, self->display_width - allocated_width);
+  width_diff = MAX (0, display_width - allocated_width);
 
   child_alloc.x = -width_diff / 2;
   child_alloc.y = 0;
@@ -634,10 +624,11 @@ static void
 adw_tab_constructed (GObject *object)
 {
   AdwTab *self = ADW_TAB (object);
+  AdwTabView *view = adw_tab_item_get_view (ADW_TAB_ITEM (self));
 
   G_OBJECT_CLASS (adw_tab_parent_class)->constructed (object);
 
-  if (self->pinned) {
+  if (adw_tab_item_get_pinned (ADW_TAB_ITEM (self))) {
     gtk_widget_add_css_class (GTK_WIDGET (self), "pinned");
     gtk_widget_hide (self->title);
     gtk_widget_hide (self->close_btn);
@@ -645,93 +636,15 @@ adw_tab_constructed (GObject *object)
     gtk_widget_set_margin_end (self->icon_stack, 0);
   }
 
-  g_signal_connect_object (self->view, "notify::default-icon",
+  g_signal_connect_object (view, "notify::default-icon",
                            G_CALLBACK (update_icons), self,
                            G_CONNECT_SWAPPED);
-}
-
-static void
-adw_tab_get_property (GObject    *object,
-                      guint       prop_id,
-                      GValue     *value,
-                      GParamSpec *pspec)
-{
-  AdwTab *self = ADW_TAB (object);
-
-  switch (prop_id) {
-  case PROP_VIEW:
-    g_value_set_object (value, self->view);
-    break;
-
-  case PROP_PAGE:
-    g_value_set_object (value, adw_tab_get_page (self));
-    break;
-
-  case PROP_PINNED:
-    g_value_set_boolean (value, self->pinned);
-    break;
-
-  case PROP_DRAGGING:
-    g_value_set_boolean (value, adw_tab_get_dragging (self));
-    break;
-
-  case PROP_DISPLAY_WIDTH:
-    g_value_set_int (value, adw_tab_get_display_width (self));
-    break;
-
-  case PROP_INVERTED:
-    g_value_set_boolean (value, adw_tab_get_inverted (self));
-    break;
-
-    default:
-    G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
-  }
-}
-
-static void
-adw_tab_set_property (GObject      *object,
-                      guint         prop_id,
-                      const GValue *value,
-                      GParamSpec   *pspec)
-{
-  AdwTab *self = ADW_TAB (object);
-
-  switch (prop_id) {
-  case PROP_VIEW:
-    self->view = g_value_get_object (value);
-    break;
-
-  case PROP_PAGE:
-    adw_tab_set_page (self, g_value_get_object (value));
-    break;
-
-  case PROP_PINNED:
-    self->pinned = g_value_get_boolean (value);
-    break;
-
-  case PROP_DRAGGING:
-    adw_tab_set_dragging (self, g_value_get_boolean (value));
-    break;
-
-  case PROP_DISPLAY_WIDTH:
-    adw_tab_set_display_width (self, g_value_get_int (value));
-    break;
-
-  case PROP_INVERTED:
-    adw_tab_set_inverted (self, g_value_get_boolean (value));
-    break;
-
-  default:
-    G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
-  }
 }
 
 static void
 adw_tab_dispose (GObject *object)
 {
   AdwTab *self = ADW_TAB (object);
-
-  adw_tab_set_page (self, NULL);
 
   g_clear_object (&self->shader);
   gtk_widget_unparent (self->indicator_btn);
@@ -747,11 +660,10 @@ adw_tab_class_init (AdwTabClass *klass)
 {
   GObjectClass *object_class = G_OBJECT_CLASS (klass);
   GtkWidgetClass *widget_class = GTK_WIDGET_CLASS (klass);
+  AdwTabItemClass *item_class = ADW_TAB_ITEM_CLASS (klass);
 
   object_class->dispose = adw_tab_dispose;
   object_class->constructed = adw_tab_constructed;
-  object_class->get_property = adw_tab_get_property;
-  object_class->set_property = adw_tab_set_property;
 
   widget_class->measure = adw_tab_measure;
   widget_class->size_allocate = adw_tab_size_allocate;
@@ -761,59 +673,8 @@ adw_tab_class_init (AdwTabClass *klass)
   widget_class->direction_changed = adw_tab_direction_changed;
   widget_class->unrealize = adw_tab_unrealize;
 
-  props[PROP_VIEW] =
-    g_param_spec_object ("view",
-                         "View",
-                         "View",
-                         ADW_TYPE_TAB_VIEW,
-                         G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY);
-
-  props[PROP_PINNED] =
-    g_param_spec_boolean ("pinned",
-                          "Pinned",
-                          "Pinned",
-                          FALSE,
-                          G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY);
-
-  props[PROP_DRAGGING] =
-    g_param_spec_boolean ("dragging",
-                          "Dragging",
-                          "Dragging",
-                          FALSE,
-                          G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY);
-
-  props[PROP_PAGE] =
-    g_param_spec_object ("page",
-                         "Page",
-                         "Page",
-                         ADW_TYPE_TAB_PAGE,
-                         G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY);
-
-  props[PROP_DISPLAY_WIDTH] =
-    g_param_spec_int ("display-width",
-                      "Display Width",
-                      "Display Width",
-                      0, G_MAXINT, 0,
-                      G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY);
-
-  props[PROP_INVERTED] =
-    g_param_spec_boolean ("inverted",
-                          "Inverted",
-                          "Inverted",
-                          FALSE,
-                          G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY);
-
-  signals[SIGNAL_EXTRA_DRAG_DROP] =
-    g_signal_new ("extra-drag-drop",
-                  G_TYPE_FROM_CLASS (klass),
-                  G_SIGNAL_RUN_LAST,
-                  0,
-                  g_signal_accumulator_first_wins, NULL, NULL,
-                  G_TYPE_BOOLEAN,
-                  1,
-                  G_TYPE_VALUE);
-
-  g_object_class_install_properties (object_class, LAST_PROP, props);
+  item_class->connect_page = adw_tab_connect_page;
+  item_class->disconnect_page = adw_tab_disconnect_page;
 
   gtk_widget_class_set_template_from_resource (widget_class,
                                                "/org/gnome/Adwaita/ui/adw-tab.ui");
@@ -824,14 +685,11 @@ adw_tab_class_init (AdwTabClass *klass)
   gtk_widget_class_bind_template_child (widget_class, AdwTab, indicator_icon);
   gtk_widget_class_bind_template_child (widget_class, AdwTab, indicator_btn);
   gtk_widget_class_bind_template_child (widget_class, AdwTab, close_btn);
+  gtk_widget_class_bind_template_callback (widget_class, update_state);
+  gtk_widget_class_bind_template_callback (widget_class, notify_dragging_cb);
+  gtk_widget_class_bind_template_callback (widget_class, notify_fully_visible_cb);
   gtk_widget_class_bind_template_callback (widget_class, close_clicked_cb);
   gtk_widget_class_bind_template_callback (widget_class, indicator_clicked_cb);
-
-  gtk_widget_class_add_binding (widget_class, GDK_KEY_space,     0, (GtkShortcutFunc) activate_cb, NULL);
-  gtk_widget_class_add_binding (widget_class, GDK_KEY_KP_Space,  0, (GtkShortcutFunc) activate_cb, NULL);
-  gtk_widget_class_add_binding (widget_class, GDK_KEY_Return,    0, (GtkShortcutFunc) activate_cb, NULL);
-  gtk_widget_class_add_binding (widget_class, GDK_KEY_ISO_Enter, 0, (GtkShortcutFunc) activate_cb, NULL);
-  gtk_widget_class_add_binding (widget_class, GDK_KEY_KP_Enter,  0, (GtkShortcutFunc) activate_cb, NULL);
 
   gtk_widget_class_set_css_name (widget_class, "tab");
 }
@@ -839,211 +697,7 @@ adw_tab_class_init (AdwTabClass *klass)
 static void
 adw_tab_init (AdwTab *self)
 {
-  GtkEventController *controller;
-
   g_type_ensure (ADW_TYPE_FADING_LABEL);
 
   gtk_widget_init_template (GTK_WIDGET (self));
-
-  controller = gtk_event_controller_motion_new ();
-  g_signal_connect_swapped (controller, "motion", G_CALLBACK (motion_cb), self);
-  g_signal_connect_swapped (controller, "leave", G_CALLBACK (leave_cb), self);
-  gtk_widget_add_controller (GTK_WIDGET (self), controller);
-}
-
-AdwTab *
-adw_tab_new (AdwTabView *view,
-             gboolean    pinned)
-{
-  g_return_val_if_fail (ADW_IS_TAB_VIEW (view), NULL);
-
-  return g_object_new (ADW_TYPE_TAB,
-                       "view", view,
-                       "pinned", pinned,
-                       NULL);
-}
-
-AdwTabPage *
-adw_tab_get_page (AdwTab *self)
-{
-  g_return_val_if_fail (ADW_IS_TAB (self), NULL);
-
-  return self->page;
-}
-
-void
-adw_tab_set_page (AdwTab     *self,
-                  AdwTabPage *page)
-{
-  g_return_if_fail (ADW_IS_TAB (self));
-  g_return_if_fail (page == NULL || ADW_IS_TAB_PAGE (page));
-
-  if (self->page == page)
-    return;
-
-  if (self->page) {
-    g_signal_handlers_disconnect_by_func (self->page, update_selected, self);
-    g_signal_handlers_disconnect_by_func (self->page, update_title, self);
-    g_signal_handlers_disconnect_by_func (self->page, update_tooltip, self);
-    g_signal_handlers_disconnect_by_func (self->page, update_icons, self);
-    g_signal_handlers_disconnect_by_func (self->page, update_indicator, self);
-    g_signal_handlers_disconnect_by_func (self->page, update_needs_attention, self);
-    g_signal_handlers_disconnect_by_func (self->page, update_loading, self);
-  }
-
-  g_set_object (&self->page, page);
-
-  if (self->page) {
-    update_selected (self);
-    update_state (self);
-    update_title (self);
-    update_tooltip (self);
-    update_spinner (self);
-    update_icons (self);
-    update_indicator (self);
-    update_needs_attention (self);
-    update_loading (self);
-
-    g_signal_connect_object (self->page, "notify::selected",
-                             G_CALLBACK (update_selected), self,
-                             G_CONNECT_SWAPPED);
-    g_signal_connect_object (self->page, "notify::title",
-                             G_CALLBACK (update_title), self,
-                             G_CONNECT_SWAPPED);
-    g_signal_connect_object (self->page, "notify::tooltip",
-                             G_CALLBACK (update_tooltip), self,
-                             G_CONNECT_SWAPPED);
-    g_signal_connect_object (self->page, "notify::icon",
-                             G_CALLBACK (update_icons), self,
-                             G_CONNECT_SWAPPED);
-    g_signal_connect_object (self->page, "notify::indicator-icon",
-                             G_CALLBACK (update_icons), self,
-                             G_CONNECT_SWAPPED);
-    g_signal_connect_object (self->page, "notify::indicator-activatable",
-                             G_CALLBACK (update_indicator), self,
-                             G_CONNECT_SWAPPED);
-    g_signal_connect_object (self->page, "notify::needs-attention",
-                             G_CALLBACK (update_needs_attention), self,
-                             G_CONNECT_SWAPPED);
-    g_signal_connect_object (self->page, "notify::loading",
-                             G_CALLBACK (update_loading), self,
-                             G_CONNECT_SWAPPED);
-  }
-
-  g_object_notify_by_pspec (G_OBJECT (self), props[PROP_PAGE]);
-}
-
-int
-adw_tab_get_display_width (AdwTab *self)
-{
-  g_return_val_if_fail (ADW_IS_TAB (self), 0);
-
-  return self->display_width;
-}
-
-void
-adw_tab_set_display_width (AdwTab *self,
-                           int     width)
-{
-  g_return_if_fail (ADW_IS_TAB (self));
-  g_return_if_fail (width >= 0);
-
-  if (self->display_width == width)
-    return;
-
-  self->display_width = width;
-
-  gtk_widget_queue_resize (GTK_WIDGET (self));
-
-  g_object_notify_by_pspec (G_OBJECT (self), props[PROP_DISPLAY_WIDTH]);
-}
-
-gboolean
-adw_tab_get_dragging (AdwTab *self)
-{
-  g_return_val_if_fail (ADW_IS_TAB (self), FALSE);
-
-  return self->dragging;
-}
-
-void
-adw_tab_set_dragging (AdwTab   *self,
-                      gboolean  dragging)
-{
-  g_return_if_fail (ADW_IS_TAB (self));
-
-  dragging = !!dragging;
-
-  if (self->dragging == dragging)
-    return;
-
-  self->dragging = dragging;
-
-  update_state (self);
-  update_selected (self);
-
-  g_object_notify_by_pspec (G_OBJECT (self), props[PROP_DRAGGING]);
-}
-
-gboolean
-adw_tab_get_inverted (AdwTab *self)
-{
-  g_return_val_if_fail (ADW_IS_TAB (self), FALSE);
-
-  return self->inverted;
-}
-
-void
-adw_tab_set_inverted (AdwTab   *self,
-                      gboolean  inverted)
-{
-  g_return_if_fail (ADW_IS_TAB (self));
-
-  inverted = !!inverted;
-
-  if (self->inverted == inverted)
-    return;
-
-  self->inverted = inverted;
-
-  gtk_widget_queue_allocate (GTK_WIDGET (self));
-
-  g_object_notify_by_pspec (G_OBJECT (self), props[PROP_INVERTED]);
-}
-
-void
-adw_tab_set_fully_visible (AdwTab   *self,
-                           gboolean  fully_visible)
-{
-  g_return_if_fail (ADW_IS_TAB (self));
-
-  fully_visible = !!fully_visible;
-
-  if (self->fully_visible == fully_visible)
-    return;
-
-  self->fully_visible = fully_visible;
-
-  update_state (self);
-  update_indicator (self);
-}
-
-void
-adw_tab_setup_extra_drop_target (AdwTab        *self,
-                                 GdkDragAction  actions,
-                                 GType         *types,
-                                 gsize          n_types)
-{
-  g_return_if_fail (ADW_IS_TAB (self));
-  g_return_if_fail (n_types == 0 || types != NULL);
-
-  if (!self->drop_target) {
-    self->drop_target = gtk_drop_target_new (G_TYPE_INVALID, actions);
-    g_signal_connect_swapped (self->drop_target, "drop", G_CALLBACK (drop_cb), self);
-    gtk_widget_add_controller (GTK_WIDGET (self), GTK_EVENT_CONTROLLER (self->drop_target));
-  } else {
-    gtk_drop_target_set_actions (self->drop_target, actions);
-  }
-
-  gtk_drop_target_set_gtypes (self->drop_target, types, n_types);
 }

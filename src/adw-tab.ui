@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <interface domain="libadwaita">
   <requires lib="gtk" version="4.0"/>
-  <template class="AdwTab" parent="GtkWidget">
+  <template class="AdwTab" parent="AdwTabItem">
     <property name="focusable">True</property>
     <property name="overflow">hidden</property>
+    <signal name="notify::hovering" handler="update_state" swapped="true"/>
+    <signal name="notify::dragging" handler="notify_dragging_cb" swapped="true"/>
+    <signal name="notify::fully-visible" handler="notify_fully_visible_cb" swapped="true"/>
     <child>
       <object class="GtkButton" id="indicator_btn">
         <property name="can-focus">False</property>
