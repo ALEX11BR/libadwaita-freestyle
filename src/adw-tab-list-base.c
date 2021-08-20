@@ -13,7 +13,6 @@
 #include "adw-animation-util-private.h"
 #include "adw-animation-private.h"
 #include "adw-gizmo-private.h"
-#include "adw-tab-private.h"
 #include "adw-tab-item-private.h"
 #include "adw-tab-view-private.h"
 #include <math.h>
@@ -1714,7 +1713,7 @@ create_tab_info (AdwTabListBase *self,
   info->page = page;
   info->pos = -1;
   info->width = -1;
-  info->tab = g_object_new (ADW_TYPE_TAB,
+  info->tab = g_object_new (ADW_TAB_LIST_BASE_GET_CLASS (self)->item_type,
                             "view", priv->view,
                             "pinned", priv->pinned,
                             NULL);
@@ -2353,7 +2352,7 @@ create_drag_icon (AdwTabListBase *self,
   icon->width = predict_tab_width (self, priv->reordered_tab, FALSE);
   icon->target_width = icon->width;
 
-  icon->tab = g_object_new (ADW_TYPE_TAB,
+  icon->tab = g_object_new (ADW_TAB_LIST_BASE_GET_CLASS (self)->item_type,
                             "view", priv->view,
                             "pinned", FALSE,
                             NULL);

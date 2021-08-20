@@ -25,6 +25,8 @@ struct _AdwTabListBaseClass
 {
   GtkWidgetClass parent_class;
 
+  GType item_type;
+
   gboolean (*tabs_have_visible_focus) (AdwTabListBase *self);
 };
 

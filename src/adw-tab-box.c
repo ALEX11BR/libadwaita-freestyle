@@ -9,6 +9,8 @@
 #include "config.h"
 
 #include "adw-tab-box-private.h"
+#include "adw-tab-private.h"
+
 struct _AdwTabBox
 {
   AdwTabListBase parent_instance;
@@ -33,6 +35,8 @@ adw_tab_box_class_init (AdwTabBoxClass *klass)
   AdwTabListBaseClass *base_class = ADW_TAB_LIST_BASE_CLASS (klass);
 
   base_class->tabs_have_visible_focus = adw_tab_box_tabs_have_visible_focus;
+
+  base_class->item_type = ADW_TYPE_TAB;
 
   gtk_widget_class_set_css_name (widget_class, "tabbox");
 }
