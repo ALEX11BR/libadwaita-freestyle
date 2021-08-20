@@ -24,6 +24,8 @@ G_DECLARE_DERIVABLE_TYPE (AdwTabListBase, adw_tab_list_base, ADW, TAB_LIST_BASE,
 struct _AdwTabListBaseClass
 {
   GtkWidgetClass parent_class;
+
+  gboolean (*tabs_have_visible_focus) (AdwTabListBase *self);
 };
 
 void adw_tab_list_base_set_view (AdwTabListBase *self,

@@ -14,7 +14,6 @@
 #include "adw-animation-private.h"
 #include "adw-gizmo-private.h"
 #include "adw-tab-private.h"
-#include "adw-tab-bar-private.h"
 #include "adw-tab-view-private.h"
 #include <math.h>
 
@@ -77,7 +76,6 @@ typedef struct {
 
 typedef struct {
   gboolean pinned;
-  AdwTabBar *tab_bar;
   AdwTabView *view;
   GtkAdjustment *adjustment;
   gboolean needs_attention_left;
@@ -164,7 +162,6 @@ G_DEFINE_ABSTRACT_TYPE_WITH_CODE (AdwTabListBase, adw_tab_list_base, GTK_TYPE_WI
 enum {
   PROP_0,
   PROP_PINNED,
-  PROP_TAB_BAR,
   PROP_VIEW,
   PROP_NEEDS_ATTENTION_LEFT,
   PROP_NEEDS_ATTENTION_RIGHT,
@@ -1660,7 +1657,7 @@ select_page (AdwTabListBase *self,
     return;
   }
 
-  if (adw_tab_bar_tabs_have_visible_focus (priv->tab_bar))
+  if (ADW_TAB_LIST_BASE_GET_CLASS (self)->tabs_have_visible_focus (self))
     gtk_widget_grab_focus (GTK_WIDGET (priv->selected_tab->tab));
 
   gtk_widget_set_focus_child (GTK_WIDGET (self),
@@ -2843,7 +2840,8 @@ handle_click (AdwTabListBase *self,
     }
   }
 
-  can_grab_focus = adw_tab_bar_tabs_have_visible_focus (priv->tab_bar);
+  can_grab_focus = ADW_TAB_LIST_BASE_GET_CLASS (self)->tabs_have_visible_focus (self);
+
 
   if (info == priv->selected_tab)
     can_grab_focus = TRUE;
@@ -3329,7 +3327,6 @@ adw_tab_list_base_dispose (GObject *object)
   g_clear_pointer (&priv->background, gtk_widget_unparent);
 
   priv->drag_gesture = NULL;
-  priv->tab_bar = NULL;
   adw_tab_list_base_set_view (self, NULL);
   set_hadjustment (self, NULL);
 
@@ -3359,10 +3356,6 @@ adw_tab_list_base_get_property (GObject    *object,
   switch (prop_id) {
   case PROP_PINNED:
     g_value_set_boolean (value, priv->pinned);
-    break;
-
-  case PROP_TAB_BAR:
-    g_value_set_object (value, priv->tab_bar);
     break;
 
   case PROP_VIEW:
@@ -3409,10 +3402,6 @@ adw_tab_list_base_set_property (GObject      *object,
     priv->pinned = g_value_get_boolean (value);
     break;
 
-  case PROP_TAB_BAR:
-    priv->tab_bar = g_value_get_object (value);
-    break;
-
   case PROP_VIEW:
     adw_tab_list_base_set_view (self, g_value_get_object (value));
     break;
@@ -3456,13 +3445,6 @@ adw_tab_list_base_class_init (AdwTabListBaseClass *klass)
                           "Pinned",
                           FALSE,
                           G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY);
-
-  props[PROP_TAB_BAR] =
-    g_param_spec_object ("tab-bar",
-                         "Tab Bar",
-                         "Tab Bar",
-                         ADW_TYPE_TAB_BAR,
-                         G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY);
 
   props[PROP_VIEW] =
     g_param_spec_object ("view",

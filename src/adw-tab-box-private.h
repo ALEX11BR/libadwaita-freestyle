@@ -12,13 +12,17 @@
 #error "Only <adwaita.h> can be included directly."
 #endif
 
-#include <gtk/gtk.h>
 #include "adw-tab-list-base-private.h"
+
+#include "adw-tab-bar-private.h"
 
 G_BEGIN_DECLS
 
 #define ADW_TYPE_TAB_BOX (adw_tab_box_get_type())
 
 G_DECLARE_FINAL_TYPE (AdwTabBox, adw_tab_box, ADW, TAB_BOX, AdwTabListBase)
+
+void adw_tab_box_set_tab_bar (AdwTabBox *self,
+                              AdwTabBar *tab_bar);
 
 G_END_DECLS

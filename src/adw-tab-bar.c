@@ -625,6 +625,9 @@ adw_tab_bar_init (AdwTabBar *self)
 
   gtk_widget_init_template (GTK_WIDGET (self));
 
+  adw_tab_box_set_tab_bar (ADW_TAB_BOX (self->box), self);
+  adw_tab_box_set_tab_bar (ADW_TAB_BOX (self->pinned_box), self);
+
   adj = gtk_scrolled_window_get_hadjustment (self->scrolled_window);
   g_signal_connect_object (adj, "changed", G_CALLBACK (update_is_overflowing),
                            self, G_CONNECT_SWAPPED);
