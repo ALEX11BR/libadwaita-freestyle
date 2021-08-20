@@ -169,6 +169,7 @@ src_sources = [
   'adw-tab-bar.c',
   'adw-tab-box.c',
   'adw-tab-button.c',
+  'adw-tab-list-base.c',
   'adw-tab-view.c',
   'adw-view-stack.c',
   'adw-view-switcher.c',

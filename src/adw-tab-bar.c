@@ -44,10 +44,10 @@ struct _AdwTabBar
   AdwBin *start_action_bin;
   AdwBin *end_action_bin;
 
-  AdwTabBox *box;
+  AdwTabListBase *box;
   GtkScrolledWindow *scrolled_window;
 
-  AdwTabBox *pinned_box;
+  AdwTabListBase *pinned_box;
   GtkScrolledWindow *pinned_scrolled_window;
 
   AdwTabView *view;
@@ -131,11 +131,11 @@ notify_selected_page_cb (AdwTabBar *self)
     return;
 
   if (adw_tab_page_get_pinned (page)) {
-    adw_tab_box_select_page (self->pinned_box, page);
-    adw_tab_box_select_page (self->box, page);
+    adw_tab_list_base_select_page (self->pinned_box, page);
+    adw_tab_list_base_select_page (self->box, page);
   } else {
-    adw_tab_box_select_page (self->box, page);
-    adw_tab_box_select_page (self->pinned_box, page);
+    adw_tab_list_base_select_page (self->box, page);
+    adw_tab_list_base_select_page (self->pinned_box, page);
   }
 }
 
@@ -144,7 +144,7 @@ notify_pinned_cb (AdwTabPage *page,
                   GParamSpec *pspec,
                   AdwTabBar  *self)
 {
-  AdwTabBox *from, *to;
+  AdwTabListBase *from, *to;
   gboolean should_focus;
 
   if (adw_tab_page_get_pinned (page)) {
@@ -155,13 +155,13 @@ notify_pinned_cb (AdwTabPage *page,
     to = self->box;
   }
 
-  should_focus = adw_tab_box_is_page_focused (from, page);
+  should_focus = adw_tab_list_base_is_page_focused (from, page);
 
-  adw_tab_box_detach_page (from, page);
-  adw_tab_box_attach_page (to, page, adw_tab_view_get_n_pinned_pages (self->view));
+  adw_tab_list_base_detach_page (from, page);
+  adw_tab_list_base_attach_page (to, page, adw_tab_view_get_n_pinned_pages (self->view));
 
   if (should_focus)
-    adw_tab_box_try_focus_selected_tab (to);
+    adw_tab_list_base_try_focus_selected_tab (to);
 }
 
 static void
@@ -747,8 +747,8 @@ adw_tab_bar_set_view (AdwTabBar  *self,
     for (i = 0; i < n; i++)
       page_detached_cb (self, adw_tab_view_get_nth_page (self->view, i), i);
 
-    adw_tab_box_set_view (self->pinned_box, NULL);
-    adw_tab_box_set_view (self->box, NULL);
+    adw_tab_list_base_set_view (self->pinned_box, NULL);
+    adw_tab_list_base_set_view (self->box, NULL);
   }
 
   g_set_object (&self->view, view);
@@ -756,8 +756,8 @@ adw_tab_bar_set_view (AdwTabBar  *self,
   if (self->view) {
     int i, n;
 
-    adw_tab_box_set_view (self->pinned_box, view);
-    adw_tab_box_set_view (self->box, view);
+    adw_tab_list_base_set_view (self->pinned_box, view);
+    adw_tab_list_base_set_view (self->box, view);
 
     g_signal_connect_object (self->view, "notify::is-transferring-page",
                              G_CALLBACK (update_autohide_cb), self,
@@ -964,7 +964,7 @@ adw_tab_bar_get_expand_tabs (AdwTabBar *self)
 {
   g_return_val_if_fail (ADW_IS_TAB_BAR (self), FALSE);
 
-  return adw_tab_box_get_expand_tabs (self->box);
+  return adw_tab_list_base_get_expand_tabs (self->box);
 }
 
 /**
@@ -987,7 +987,7 @@ adw_tab_bar_set_expand_tabs (AdwTabBar *self,
   if (adw_tab_bar_get_expand_tabs (self) == expand_tabs)
     return;
 
-  adw_tab_box_set_expand_tabs (self->box, expand_tabs);
+  adw_tab_list_base_set_expand_tabs (self->box, expand_tabs);
 
   g_object_notify_by_pspec (G_OBJECT (self), props[PROP_EXPAND_TABS]);
 }
@@ -1007,7 +1007,7 @@ adw_tab_bar_get_inverted (AdwTabBar *self)
 {
   g_return_val_if_fail (ADW_IS_TAB_BAR (self), FALSE);
 
-  return adw_tab_box_get_inverted (self->box);
+  return adw_tab_list_base_get_inverted (self->box);
 }
 
 /**
@@ -1030,7 +1030,7 @@ adw_tab_bar_set_inverted (AdwTabBar *self,
   if (adw_tab_bar_get_inverted (self) == inverted)
     return;
 
-  adw_tab_box_set_inverted (self->box, inverted);
+  adw_tab_list_base_set_inverted (self->box, inverted);
 
   g_object_notify_by_pspec (G_OBJECT (self), props[PROP_INVERTED]);
 }
@@ -1067,8 +1067,8 @@ adw_tab_bar_setup_extra_drop_target (AdwTabBar     *self,
   g_return_if_fail (ADW_IS_TAB_BAR (self));
   g_return_if_fail (n_types == 0 || types != NULL);
 
-  adw_tab_box_setup_extra_drop_target (self->box, actions, types, n_types);
-  adw_tab_box_setup_extra_drop_target (self->pinned_box, actions, types, n_types);
+  adw_tab_list_base_setup_extra_drop_target (self->box, actions, types, n_types);
+  adw_tab_list_base_setup_extra_drop_target (self->pinned_box, actions, types, n_types);
 }
 
 /**
