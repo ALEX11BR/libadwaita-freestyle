@@ -922,6 +922,28 @@ scroll_cb (AdwTabBox          *self,
   return GDK_EVENT_STOP;
 }
 
+static void
+set_hadjustment (AdwTabBox     *self,
+                 GtkAdjustment *adjustment)
+{
+  if (adjustment == self->adjustment)
+    return;
+
+  if (self->adjustment) {
+    g_signal_handlers_disconnect_by_func (self->adjustment, adjustment_value_changed_cb, self);
+    g_signal_handlers_disconnect_by_func (self->adjustment, update_visible, self);
+  }
+
+  g_set_object (&self->adjustment, adjustment);
+
+  if (self->adjustment) {
+    g_signal_connect_object (self->adjustment, "value-changed", G_CALLBACK (adjustment_value_changed_cb), self, G_CONNECT_SWAPPED);
+    g_signal_connect_object (self->adjustment, "notify::page-size", G_CALLBACK (update_visible), self, G_CONNECT_SWAPPED);
+  }
+
+  g_object_notify (G_OBJECT (self), "hadjustment");
+}
+
 /* Reordering */
 
 static void
@@ -3193,7 +3215,7 @@ adw_tab_box_dispose (GObject *object)
   self->drag_gesture = NULL;
   self->tab_bar = NULL;
   adw_tab_box_set_view (self, NULL);
-  adw_tab_box_set_adjustment (self, NULL);
+  set_hadjustment (self, NULL);
 
   G_OBJECT_CLASS (adw_tab_box_parent_class)->dispose (object);
 }
@@ -3277,7 +3299,7 @@ adw_tab_box_set_property (GObject      *object,
     break;
 
   case PROP_HADJUSTMENT:
-    adw_tab_box_set_adjustment (self, g_value_get_object (value));
+    set_hadjustment (self, g_value_get_object (value));
     break;
 
   case PROP_VADJUSTMENT:
@@ -3511,31 +3533,6 @@ adw_tab_box_set_view (AdwTabBox  *self,
   gtk_widget_queue_allocate (GTK_WIDGET (self));
 
   g_object_notify_by_pspec (G_OBJECT (self), props[PROP_VIEW]);
-}
-
-void
-adw_tab_box_set_adjustment (AdwTabBox     *self,
-                            GtkAdjustment *adjustment)
-{
-  g_return_if_fail (ADW_IS_TAB_BOX (self));
-  g_return_if_fail (adjustment == NULL || GTK_IS_ADJUSTMENT (adjustment));
-
-  if (adjustment == self->adjustment)
-    return;
-
-  if (self->adjustment) {
-    g_signal_handlers_disconnect_by_func (self->adjustment, adjustment_value_changed_cb, self);
-    g_signal_handlers_disconnect_by_func (self->adjustment, update_visible, self);
-  }
-
-  g_set_object (&self->adjustment, adjustment);
-
-  if (self->adjustment) {
-    g_signal_connect_object (self->adjustment, "value-changed", G_CALLBACK (adjustment_value_changed_cb), self, G_CONNECT_SWAPPED);
-    g_signal_connect_object (self->adjustment, "notify::page-size", G_CALLBACK (update_visible), self, G_CONNECT_SWAPPED);
-  }
-
-  g_object_notify (G_OBJECT (self), "hadjustment");
 }
 
 void
