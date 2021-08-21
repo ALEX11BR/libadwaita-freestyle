@@ -2831,23 +2831,15 @@ handle_click (AdwTabListBase *self,
   AdwTabListBasePrivate *priv = adw_tab_list_base_get_instance_private (self);
   gboolean can_grab_focus;
 
-  if (priv->adjustment) {
-    int pos = get_tab_position (self, info);
-    double value = gtk_adjustment_get_value (priv->adjustment);
-    double page_size = gtk_adjustment_get_page_size (priv->adjustment);
+  if (!adw_tab_item_get_fully_visible (info->tab)) {
+    gtk_gesture_set_state (gesture, GTK_EVENT_SEQUENCE_CLAIMED);
 
-    if (pos + OVERLAP < value ||
-        pos + info->width - OVERLAP > value + page_size) {
-      gtk_gesture_set_state (gesture, GTK_EVENT_SEQUENCE_CLAIMED);
+    scroll_to_tab (self, info, SCROLL_ANIMATION_DURATION);
 
-      scroll_to_tab (self, info, SCROLL_ANIMATION_DURATION);
-
-      return;
-    }
+    return;
   }
 
   can_grab_focus = ADW_TAB_LIST_BASE_GET_CLASS (self)->tabs_have_visible_focus (self);
-
 
   if (info == priv->selected_tab)
     can_grab_focus = TRUE;
