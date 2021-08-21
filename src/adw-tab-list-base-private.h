@@ -61,4 +61,6 @@ gboolean adw_tab_list_base_get_inverted (AdwTabListBase *self);
 void     adw_tab_list_base_set_inverted (AdwTabListBase *self,
                                          gboolean        inverted);
 
+GtkWidget *adw_tab_list_base_get_selected_item (AdwTabListBase *self);
+
 G_END_DECLS

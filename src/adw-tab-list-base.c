@@ -3807,3 +3807,18 @@ adw_tab_list_base_set_inverted (AdwTabListBase *self,
     adw_tab_item_set_inverted (info->tab, inverted);
   }
 }
+
+GtkWidget *
+adw_tab_list_base_get_selected_item (AdwTabListBase *self)
+{
+  AdwTabListBasePrivate *priv;
+
+  g_return_val_if_fail (ADW_IS_TAB_LIST_BASE (self), NULL);
+
+  priv = adw_tab_list_base_get_instance_private (self);
+
+  if (priv->selected_tab)
+    return GTK_WIDGET (priv->selected_tab->tab);
+
+  return NULL;
+}
