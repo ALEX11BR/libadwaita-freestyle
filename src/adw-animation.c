@@ -170,11 +170,23 @@ adw_animation_constructed (GObject *object)
 }
 
 static void
+adw_animation_dispose (GObject *object)
+{
+  AdwAnimation *self = ADW_ANIMATION (object);
+  AdwAnimationPrivate *priv = adw_animation_get_instance_private (self);
+
+  g_clear_object (&priv->widget);
+
+  G_OBJECT_CLASS (adw_animation_parent_class)->dispose (object);
+}
+
+static void
 adw_animation_class_init (AdwAnimationClass *klass)
 {
   GObjectClass *object_class = G_OBJECT_CLASS (klass);
 
   object_class->constructed = adw_animation_constructed;
+  object_class->dispose = adw_animation_dispose;
   object_class->set_property = adw_animation_set_property;
   object_class->get_property = adw_animation_get_property;
 
