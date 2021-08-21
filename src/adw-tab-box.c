@@ -29,12 +29,23 @@ adw_tab_box_tabs_have_visible_focus (AdwTabListBase *base)
 }
 
 static void
+adw_tab_box_activate_item (AdwTabListBase *base,
+                           AdwTabItem     *item)
+{
+  AdwTabPage *page = adw_tab_item_get_page (item);
+  GtkWidget *child = adw_tab_page_get_child (page);
+
+  gtk_widget_grab_focus (child);
+}
+
+static void
 adw_tab_box_class_init (AdwTabBoxClass *klass)
 {
   GtkWidgetClass *widget_class = GTK_WIDGET_CLASS (klass);
   AdwTabListBaseClass *base_class = ADW_TAB_LIST_BASE_CLASS (klass);
 
   base_class->tabs_have_visible_focus = adw_tab_box_tabs_have_visible_focus;
+  base_class->activate_item = adw_tab_box_activate_item;
 
   base_class->item_type = ADW_TYPE_TAB;
 

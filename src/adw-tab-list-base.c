@@ -647,17 +647,10 @@ add_reorder_bindings (GtkWidgetClass   *widget_class,
 }
 
 static void
-activate_tab (AdwTabListBase *self)
+item_activated_cb (AdwTabListBase *self,
+                   AdwTabItem     *item)
 {
-  AdwTabListBasePrivate *priv = adw_tab_list_base_get_instance_private (self);
-  GtkWidget *child;
-
-  if (!priv->selected_tab || !priv->selected_tab->page)
-    return;
-
-  child = adw_tab_page_get_child (priv->selected_tab->page);
-
-  gtk_widget_grab_focus (child);
+  ADW_TAB_LIST_BASE_GET_CLASS (self)->activate_item (self, item);
 }
 
 /* Scrolling */
@@ -670,14 +663,19 @@ update_visible (AdwTabListBase *self)
   GList *l;
   double value, page_size;
 
-  if (!priv->adjustment)
+  // TODO
+  if (!priv->adjustment) {
+    for (l = priv->tabs; l; l = l->next) {
+      TabInfo *info = l->data;
+
+      adw_tab_item_set_fully_visible (info->tab, TRUE);
+    }
+
     return;
+  }
 
   value = gtk_adjustment_get_value (priv->adjustment);
   page_size = gtk_adjustment_get_page_size (priv->adjustment);
-
-  if (!priv->adjustment)
-      return;
 
   for (l = priv->tabs; l; l = l->next) {
     TabInfo *info = l->data;
@@ -1724,6 +1722,9 @@ create_tab_info (AdwTabListBase *self,
                                         priv->extra_drag_actions,
                                         priv->extra_drag_types,
                                         priv->extra_drag_n_types);
+
+  g_signal_connect_object (info->tab, "activate", G_CALLBACK (item_activated_cb),
+                           self, G_CONNECT_SWAPPED);
 
   gtk_widget_set_parent (GTK_WIDGET (info->tab), GTK_WIDGET (self));
 
@@ -2849,7 +2850,7 @@ handle_click (AdwTabListBase *self,
   if (can_grab_focus)
     gtk_widget_grab_focus (GTK_WIDGET (info->tab));
   else
-    activate_tab (self);
+    gtk_widget_grab_focus (adw_tab_page_get_child (info->page));
 }
 
 static void
@@ -2916,9 +2917,7 @@ released_cb (AdwTabListBase *self,
 {
   AdwTabListBasePrivate *priv = adw_tab_list_base_get_instance_private (self);
   TabInfo *info;
-
-  if (!is_touchscreen (gesture))
-    return;
+  guint button;
 
   x += gtk_adjustment_get_value (priv->adjustment);
 
@@ -2930,7 +2929,16 @@ released_cb (AdwTabListBase *self,
     return;
   }
 
-  handle_click (self, info, gesture);
+  button = gtk_gesture_single_get_current_button (GTK_GESTURE_SINGLE (gesture));
+
+  if (button != GDK_BUTTON_PRIMARY)
+    return;
+
+  if (is_touchscreen (gesture))
+    handle_click (self, info, gesture);
+
+  if (adw_tab_item_get_fully_visible (info->tab))
+    ADW_TAB_LIST_BASE_GET_CLASS (self)->activate_item (self, info->tab);
 }
 
 /* Overrides */

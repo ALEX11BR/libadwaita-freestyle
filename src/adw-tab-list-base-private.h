@@ -13,6 +13,7 @@
 #endif
 
 #include <gtk/gtk.h>
+#include "adw-tab-item-private.h"
 #include "adw-tab-view.h"
 
 G_BEGIN_DECLS
@@ -28,6 +29,9 @@ struct _AdwTabListBaseClass
   GType item_type;
 
   gboolean (*tabs_have_visible_focus) (AdwTabListBase *self);
+
+  void (*activate_item) (AdwTabListBase *self,
+                         AdwTabItem     *item);
 };
 
 void adw_tab_list_base_set_view (AdwTabListBase *self,

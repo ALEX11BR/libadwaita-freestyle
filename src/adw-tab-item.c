@@ -40,6 +40,7 @@ enum {
 static GParamSpec *props[LAST_PROP];
 
 enum {
+  SIGNAL_ACTIVATE,
   SIGNAL_EXTRA_DRAG_DROP,
   SIGNAL_LAST_SIGNAL,
 };
@@ -106,15 +107,7 @@ static gboolean
 activate_cb (AdwTabItem *self,
              GVariant   *args)
 {
-  AdwTabItemPrivate *priv = adw_tab_item_get_instance_private (self);
-  GtkWidget *child;
-
-  if (!priv->page || !priv->view)
-    return GDK_EVENT_PROPAGATE;
-
-  child = adw_tab_page_get_child (priv->page);
-
-  gtk_widget_grab_focus (child);
+  g_signal_emit (self, signals[SIGNAL_ACTIVATE], 0);
 
   return GDK_EVENT_STOP;
 }
@@ -293,6 +286,15 @@ adw_tab_item_class_init (AdwTabItemClass *klass)
                   G_TYPE_BOOLEAN,
                   1,
                   G_TYPE_VALUE);
+
+  signals[SIGNAL_ACTIVATE] =
+    g_signal_new ("activate",
+                  G_TYPE_FROM_CLASS (klass),
+                  G_SIGNAL_RUN_LAST,
+                  0,
+                  NULL, NULL, NULL,
+                  G_TYPE_NONE,
+                  0);
 
   g_object_class_install_properties (object_class, LAST_PROP, props);
 
