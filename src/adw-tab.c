@@ -31,7 +31,6 @@ struct _AdwTab
   GtkImage *indicator_icon;
   GtkWidget *indicator_btn;
   GtkWidget *close_btn;
-  GtkDropTarget *drop_target;
 
   gboolean selected;
   gboolean title_inverted;
