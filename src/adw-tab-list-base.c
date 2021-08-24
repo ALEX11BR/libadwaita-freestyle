@@ -33,6 +33,7 @@
 #define ICON_RESIZE_ANIMATION_DURATION 200
 
 #define MAX_TAB_WIDTH_NON_EXPAND 220
+#define WRAP TRUE
 
 typedef enum {
   TAB_RESIZE_NORMAL,
@@ -50,7 +51,11 @@ typedef struct {
   int hotspot_y;
 
   int width;
+  int height;
+  int source_width;
+  int source_height;
   int target_width;
+  int target_height;
   AdwAnimation *resize_animation;
 } DragIcon;
 
@@ -58,9 +63,12 @@ typedef struct {
   AdwTabPage *page;
   AdwTabItem *tab;
 
-  int pos;
+  int pos_x;
+  int pos_y;
   int width;
+  int height;
   int last_width;
+  int last_height;
 
   double end_reorder_offset;
   double reorder_offset;
@@ -93,7 +101,9 @@ typedef struct {
   GtkWidget *background;
 
   int allocated_width;
+  int allocated_height;
   int last_width;
+  int last_height;
   int end_padding;
   int initial_end_padding;
   TabResizeMode tab_resize_mode;
@@ -106,11 +116,11 @@ typedef struct {
   TabInfo *reordered_tab;
   AdwAnimation *reorder_animation;
 
-  int reorder_start_pos;
   int reorder_x;
   int reorder_y;
   int reorder_index;
   int reorder_window_x;
+  int reorder_window_y;
   gboolean continue_reorder;
   gboolean indirect_reordering;
 
@@ -134,6 +144,7 @@ typedef struct {
   guint drop_switch_timeout_id;
   guint reset_drop_target_tab_id;
   double drop_target_x;
+  double drop_target_y;
 
   struct {
     TabInfo *info;
@@ -194,28 +205,43 @@ remove_and_free_tab_info (TabInfo *info)
 }
 
 static inline int
-get_tab_position (AdwTabListBase *self,
-                  TabInfo        *info)
+get_tab_x (AdwTabListBase *self,
+           TabInfo        *info)
 {
   AdwTabListBasePrivate *priv = adw_tab_list_base_get_instance_private (self);
 
   if (info == priv->reordered_tab)
     return priv->reorder_window_x;
 
-  return info->pos;
+  return info->pos_x;
+}
+
+static inline int
+get_tab_y (AdwTabListBase *self,
+           TabInfo        *info)
+{
+  AdwTabListBasePrivate *priv = adw_tab_list_base_get_instance_private (self);
+
+  if (info == priv->reordered_tab)
+    return priv->reorder_window_y;
+
+  return info->pos_y;
 }
 
 static inline TabInfo *
 find_tab_info_at (AdwTabListBase *self,
-                  double          x)
+                  double          x,
+                  double          y)
 {
   AdwTabListBasePrivate *priv = adw_tab_list_base_get_instance_private (self);
   GList *l;
 
   if (priv->reordered_tab) {
-    int pos = get_tab_position (self, priv->reordered_tab);
+    int pos_x = get_tab_x (self, priv->reordered_tab);
+    int pos_y = get_tab_y (self, priv->reordered_tab);
 
-    if (pos <= x && x < pos + priv->reordered_tab->width)
+    if (pos_x <= x && x < pos_x + priv->reordered_tab->width &&
+        pos_y <= y && y < pos_y + priv->reordered_tab->height)
       return priv->reordered_tab;
   }
 
@@ -223,7 +249,8 @@ find_tab_info_at (AdwTabListBase *self,
     TabInfo *info = l->data;
 
     if (info != priv->reordered_tab &&
-        info->pos <= x && x < info->pos + info->width)
+        info->pos_x <= x && x < info->pos_x + info->width &&
+        info->pos_y <= y && y < info->pos_y + info->height)
       return info;
   }
 
@@ -258,7 +285,7 @@ find_info_for_page (AdwTabListBase *self,
 
 static GList *
 find_nth_alive_tab (AdwTabListBase *self,
-                    guint      position)
+                    guint           position)
 {
   AdwTabListBasePrivate *priv = adw_tab_list_base_get_instance_private (self);
   GList *l;
@@ -285,7 +312,7 @@ calculate_tab_width (TabInfo *info,
 
 static int
 get_base_tab_width (AdwTabListBase *self,
-                    gboolean   target)
+                    gboolean        target)
 {
   AdwTabListBasePrivate *priv = adw_tab_list_base_get_instance_private (self);
   double max_progress = 0;
@@ -367,7 +394,7 @@ get_visible_range (AdwTabListBase *self,
 {
   AdwTabListBasePrivate *priv = adw_tab_list_base_get_instance_private (self);
   int min = -OVERLAP;
-  int max = priv->allocated_width + OVERLAP;
+  int max = (WRAP ? priv->allocated_height : priv->allocated_width) + OVERLAP;
 
   if (priv->pinned) {
     if (gtk_widget_get_direction (GTK_WIDGET (self)) == GTK_TEXT_DIR_RTL)
@@ -412,7 +439,7 @@ resize_animation_value_cb (double   value,
   double target_end_padding = 0;
 
   if (!priv->expand_tabs) {
-    int predicted_tab_width = get_base_tab_width (self, TRUE);
+    int target_tab_width = get_base_tab_width (self, TRUE);
     GList *l;
 
     target_end_padding = priv->allocated_width + OVERLAP;
@@ -420,7 +447,7 @@ resize_animation_value_cb (double   value,
     for (l = priv->tabs; l; l = l->next) {
       TabInfo *info = l->data;
 
-      target_end_padding -= calculate_tab_width (info, predicted_tab_width) - OVERLAP;
+      target_end_padding -= calculate_tab_width (info, target_tab_width) - OVERLAP;
     }
 
     target_end_padding = MAX (target_end_padding, 0);
@@ -457,17 +484,22 @@ set_tab_resize_mode (AdwTabListBase *self,
     GList *l;
 
     priv->last_width = priv->allocated_width;
+    priv->last_height = priv->allocated_height;
 
     for (l = priv->tabs; l; l = l->next) {
       TabInfo *info = l->data;
 
-      if (info->appear_animation)
+      if (info->appear_animation) {
         info->last_width = adw_tab_item_get_display_width (info->tab);
-      else
+        info->last_height = adw_tab_item_get_display_height(info->tab);
+      } else {
         info->last_width = info->width;
+        info->last_height = info->height;
+      }
     }
   } else {
     priv->last_width = 0;
+    priv->last_height = 0;
   }
 
   if (mode == TAB_RESIZE_NORMAL) {
@@ -663,40 +695,36 @@ update_visible (AdwTabListBase *self)
   GList *l;
   double value, page_size;
 
-  // TODO
-  if (!priv->adjustment) {
-    for (l = priv->tabs; l; l = l->next) {
-      TabInfo *info = l->data;
-
-      adw_tab_item_set_fully_visible (info->tab, TRUE);
-    }
-
-    return;
-  }
-
   value = gtk_adjustment_get_value (priv->adjustment);
   page_size = gtk_adjustment_get_page_size (priv->adjustment);
 
   for (l = priv->tabs; l; l = l->next) {
     TabInfo *info = l->data;
-    int pos;
+    int pos_x, pos_y;
 
     if (!info->page)
       continue;
 
-    pos = get_tab_position (self, info);
+    pos_x = get_tab_x (self, info);
+    pos_y = get_tab_y (self, info);
 
-    adw_tab_item_set_fully_visible (info->tab,
-                                    pos + OVERLAP >= value &&
-                                    pos + info->width - OVERLAP <= value + page_size);
+    if (WRAP) {
+      adw_tab_item_set_fully_visible (info->tab,
+                                      pos_y + OVERLAP >= value &&
+                                      pos_y + info->height - OVERLAP <= value + page_size);
+    } else {
+      adw_tab_item_set_fully_visible (info->tab,
+                                      pos_x + OVERLAP >= value &&
+                                      pos_x + info->width - OVERLAP <= value + page_size);
+    }
 
     if (!adw_tab_page_get_needs_attention (info->page))
       continue;
 
-    if (pos + info->width / 2.0 <= value)
+    if (pos_x + info->width / 2.0 <= value)
       left = TRUE;
 
-    if (pos + info->width / 2.0 >= value + page_size)
+    if (pos_x + info->width / 2.0 >= value + page_size)
       right = TRUE;
   }
 
@@ -724,8 +752,13 @@ get_scroll_animation_value (AdwTabListBase *self)
   if (priv->scroll_animation_tab) {
     double page_size = gtk_adjustment_get_page_size (priv->adjustment);
 
-    to += get_tab_position (self, priv->scroll_animation_tab);
-    to = CLAMP (to, 0, priv->allocated_width - page_size);
+    if (WRAP) {
+      to += get_tab_y (self, priv->scroll_animation_tab);
+      to = CLAMP (to, 0, priv->allocated_height - page_size);
+    } else {
+      to += get_tab_x (self, priv->scroll_animation_tab);
+      to = CLAMP (to, 0, priv->allocated_width - page_size);
+    }
   }
 
   value = adw_animation_get_value (priv->scroll_animation);
@@ -776,8 +809,12 @@ adjustment_value_changed_cb (AdwTabListBase *self)
   update_visible (self);
 
   if (priv->drop_target_tab) {
-    priv->drop_target_x += (value - priv->adjustment_prev_value);
-    set_drop_target_tab (self, find_tab_info_at (self, priv->drop_target_x));
+    if (WRAP)
+      priv->drop_target_y += (value - priv->adjustment_prev_value);
+    else
+      priv->drop_target_x += (value - priv->adjustment_prev_value);
+
+    set_drop_target_tab (self, find_tab_info_at (self, priv->drop_target_x, priv->drop_target_y));
   }
 
   priv->adjustment_prev_value = value;
@@ -857,7 +894,7 @@ animate_scroll_relative (AdwTabListBase *self,
     current_value = priv->scroll_animation_offset;
 
     if (priv->scroll_animation_tab)
-      current_value += get_tab_position (self, priv->scroll_animation_tab);
+      current_value += WRAP ? get_tab_y (self, priv->scroll_animation_tab) : get_tab_x (self, priv->scroll_animation_tab);
   }
 
   animate_scroll (self, NULL, current_value + delta, duration);
@@ -871,15 +908,15 @@ scroll_to_tab_full (AdwTabListBase *self,
                     gboolean        keep_selected_visible)
 {
   AdwTabListBasePrivate *priv = adw_tab_list_base_get_instance_private (self);
-  int tab_width;
+  int tab_size;
   double padding, value, page_size;
 
   if (!priv->adjustment)
     return;
 
-  tab_width = info->width;
+  tab_size = WRAP ? info->height : info->width;
 
-  if (tab_width < 0) {
+  if (tab_size < 0) {
     priv->scheduled_scroll.info = info;
     priv->scheduled_scroll.pos = pos;
     priv->scheduled_scroll.duration = duration;
@@ -890,21 +927,25 @@ scroll_to_tab_full (AdwTabListBase *self,
     return;
   }
 
-  if (info->appear_animation)
-    tab_width = adw_tab_item_get_display_width (info->tab);
+  if (info->appear_animation) {
+    if (WRAP)
+      tab_size = adw_tab_item_get_display_height (info->tab);
+    else
+      tab_size = adw_tab_item_get_display_width (info->tab);
+  }
 
   value = gtk_adjustment_get_value (priv->adjustment);
   page_size = gtk_adjustment_get_page_size (priv->adjustment);
 
-  padding = MIN (tab_width, page_size - tab_width) / 2.0;
+  padding = MIN (tab_size, page_size - tab_size) / 2.0;
 
   if (pos < 0)
-    pos = get_tab_position (self, info);
+    pos = WRAP ? get_tab_y (self, info) : get_tab_x (self, info);
 
   if (pos + OVERLAP < value)
     animate_scroll (self, info, -padding, duration);
-  else if (pos + tab_width - OVERLAP > value + page_size)
-    animate_scroll (self, info, tab_width + padding - page_size, duration);
+  else if (pos + tab_size - OVERLAP > value + page_size)
+    animate_scroll (self, info, tab_size + padding - page_size, duration);
 }
 
 static void
@@ -926,7 +967,7 @@ scroll_cb (AdwTabListBase     *self,
   GdkDevice *source_device;
   GdkInputSource input_source;
 
-  if (!priv->adjustment)
+  if (!priv->adjustment || WRAP)
     return GDK_EVENT_PROPAGATE;
 
   source_device = gtk_event_controller_get_current_event_device (controller);
@@ -950,8 +991,8 @@ scroll_cb (AdwTabListBase     *self,
 }
 
 static void
-set_hadjustment (AdwTabListBase *self,
-                 GtkAdjustment  *adjustment)
+set_adjustment (AdwTabListBase *self,
+                GtkAdjustment  *adjustment)
 {
   AdwTabListBasePrivate *priv = adw_tab_list_base_get_instance_private (self);
 
@@ -970,7 +1011,7 @@ set_hadjustment (AdwTabListBase *self,
     g_signal_connect_object (priv->adjustment, "notify::page-size", G_CALLBACK (update_visible), self, G_CONNECT_SWAPPED);
   }
 
-  g_object_notify (G_OBJECT (self), "hadjustment");
+  g_object_notify (G_OBJECT (self), WRAP ? "vadjustment" : "hadjustment");
 }
 
 /* Reordering */
@@ -1046,18 +1087,29 @@ start_reordering (AdwTabListBase *self,
   gtk_widget_queue_allocate (GTK_WIDGET (self));
 }
 
-static int
-get_reorder_position (AdwTabListBase *self)
+static void
+get_reorder_position (AdwTabListBase *self,
+                      int            *x,
+                      int            *y)
 {
   AdwTabListBasePrivate *priv = adw_tab_list_base_get_instance_private (self);
   int lower, upper;
 
-  if (priv->reordered_tab->reorder_ignore_bounds)
-    return priv->reorder_x;
+  if (priv->reordered_tab->reorder_ignore_bounds) {
+    *x = priv->reorder_x;
+    *y = priv->reorder_y;
+    return;
+  }
 
   get_visible_range (self, &lower, &upper);
 
-  return CLAMP (priv->reorder_x, lower, upper - priv->reordered_tab->width);
+  *x = priv->reorder_x;
+  *y = priv->reorder_y;
+
+  if (WRAP)
+    *y = CLAMP (*y, lower, upper - priv->reordered_tab->height);
+  else
+    *x = CLAMP (*x, lower, upper - priv->reordered_tab->width);
 }
 
 static void
@@ -1069,15 +1121,20 @@ reorder_animation_value_cb (double   value,
   AdwTabListBase *self = ADW_TAB_LIST_BASE (parent);
   AdwTabListBasePrivate *priv = adw_tab_list_base_get_instance_private (self);
   gboolean is_rtl = gtk_widget_get_direction (GTK_WIDGET (self)) == GTK_TEXT_DIR_RTL;
-  double x1, x2;
+  int x, y;
+  double x1, x2, y1, y2;
 
-  x1 = get_reorder_position (self);
-  x2 = dest_tab->pos - calculate_tab_offset (self, dest_tab, FALSE);
+  get_reorder_position (self, &x, &y);
+  x1 = x;
+  y1 = y;
+  x2 = dest_tab->pos_x - calculate_tab_offset (self, dest_tab, FALSE);
+  y2 = dest_tab->pos_y;
 
   if (dest_tab->end_reorder_offset * (is_rtl ? 1 : -1) > 0)
     x2 += dest_tab->width - priv->reordered_tab->width;
 
   priv->reorder_window_x = (int) round (adw_lerp (x1, x2, value));
+  priv->reorder_window_y = (int) round (adw_lerp (y1, y2, value));
 
   gtk_widget_queue_allocate (GTK_WIDGET (self));
 }
@@ -1220,10 +1277,13 @@ page_reordered_cb (AdwTabListBase *self,
   if (!priv->continue_reorder)
     start_reordering (self, info);
 
-  if (priv->continue_reorder)
+  if (priv->continue_reorder) {
     priv->reorder_x = priv->reorder_window_x;
-  else
-    priv->reorder_x = info->pos;
+    priv->reorder_y = priv->reorder_window_y;
+  } else {
+    priv->reorder_x = info->pos_x;
+    priv->reorder_y = info->pos_y;
+  }
 
   priv->reorder_index = index;
 
@@ -1233,7 +1293,9 @@ page_reordered_cb (AdwTabListBase *self,
   dest_tab = g_list_nth_data (priv->tabs, priv->reorder_index);
 
   if (info == priv->selected_tab)
-    scroll_to_tab_full (self, priv->selected_tab, dest_tab->pos, REORDER_ANIMATION_DURATION, FALSE);
+    scroll_to_tab_full (self, priv->selected_tab,
+                        WRAP ? dest_tab->pos_y : dest_tab->pos_x,
+                        REORDER_ANIMATION_DURATION, FALSE);
 
   animate_reordering (self, dest_tab);
 
@@ -1268,52 +1330,68 @@ static void
 update_drag_reodering (AdwTabListBase *self)
 {
   AdwTabListBasePrivate *priv = adw_tab_list_base_get_instance_private (self);
-  gboolean is_rtl, after_selected, found_index;
-  int x;
+  gboolean is_rtl;
+  int old_index = -1, new_index = -1;
+  int x, y;
   int i = 0;
-  int width;
+  int width, height;
   GList *l;
 
   if (!priv->dragging)
     return;
 
-  x = get_reorder_position (self);
+  get_reorder_position (self, &x, &y);
 
   width = adw_tab_item_get_display_width (priv->reordered_tab->tab);
+  height = adw_tab_item_get_display_height (priv->reordered_tab->tab);
 
   priv->reorder_window_x = x;
+  priv->reorder_window_y = y;
 
   gtk_widget_queue_allocate (GTK_WIDGET (self));
 
   is_rtl = gtk_widget_get_direction (GTK_WIDGET (self)) == GTK_TEXT_DIR_RTL;
-  after_selected = FALSE;
-  found_index = FALSE;
 
   for (l = priv->tabs; l; l = l->next) {
     TabInfo *info = l->data;
-    int center = info->pos - calculate_tab_offset (self, info, FALSE) + info->width / 2;
+    int center_x = info->pos_x - calculate_tab_offset (self, info, FALSE) + info->width / 2;
+    int center_y = info->pos_y + info->height / 2;
+
+    if (info == priv->reordered_tab)
+      old_index = i;
+
+    if (((x + width > center_x && center_x > x) &&
+         (y + height > center_y && center_y > y)) &&
+        new_index < 0)
+      new_index = i;
+
+    if (old_index >= 0 && new_index >= 0)
+      break;
+
+    i++;
+  }
+
+  if (new_index < 0)
+    new_index = g_list_length (priv->tabs) - 1;
+
+  i = 0;
+
+  for (l = priv->tabs; l; l = l->next) {
+    TabInfo *info = l->data;
     double offset = 0;
 
-    if (x + width > center && center > x &&
-        (!found_index || after_selected)) {
-      priv->reorder_index = i;
-      found_index = TRUE;
-    }
+    if (i > old_index && i <= new_index)
+      offset = is_rtl ? 1 : -1;
+
+    if (i < old_index && i >= new_index)
+      offset = is_rtl ? -1 : 1;
 
     i++;
 
-    if (info == priv->reordered_tab) {
-      after_selected = TRUE;
-      continue;
-    }
-
-    if (after_selected != is_rtl && x + width > center)
-      offset = -1;
-    else if (after_selected == is_rtl && x < center)
-      offset = 1;
-
     animate_reorder_offset (self, info, offset);
   }
+
+  priv->reorder_index = new_index;
 }
 
 static gboolean
@@ -1323,47 +1401,56 @@ drag_autoscroll_cb (GtkWidget      *widget,
 {
   AdwTabListBasePrivate *priv = adw_tab_list_base_get_instance_private (self);
   double value, page_size;
-  double x, delta_ms, start_threshold, end_threshold, autoscroll_factor;
+  double pos, delta_ms, start_threshold, end_threshold, autoscroll_factor;
   gint64 time;
   int offset = 0;
-  int tab_width = 0;
+  int tab_size = 0;
   int autoscroll_area = 0;
 
   if (priv->reordered_tab) {
-    gtk_widget_measure (GTK_WIDGET (priv->reordered_tab->tab),
-                        GTK_ORIENTATION_HORIZONTAL, -1,
-                        NULL, &tab_width, NULL, NULL);
-    tab_width -= 2 * OVERLAP;
-    x = (double) priv->reorder_x + OVERLAP;
+    if (WRAP) {
+      tab_size = priv->reordered_tab->height - 2 * OVERLAP;
+      pos = (double) priv->reorder_y + OVERLAP;
+    } else {
+      tab_size = priv->reordered_tab->width - 2 * OVERLAP;
+      pos = (double) priv->reorder_x + OVERLAP;
+    }
   } else if (priv->drop_target_tab) {
-    gtk_widget_measure (GTK_WIDGET (priv->drop_target_tab->tab),
-                        GTK_ORIENTATION_HORIZONTAL, -1,
-                        NULL, &tab_width, NULL, NULL);
-    tab_width -= 2 * OVERLAP;
-    x = (double) priv->drop_target_x + OVERLAP - tab_width / 2;
+    if (WRAP) {
+      tab_size = priv->drop_target_tab->height - 2 * OVERLAP;
+      pos = (double) priv->drop_target_y + OVERLAP - tab_size / 2;
+    } else {
+      tab_size = priv->drop_target_tab->width - 2 * OVERLAP;
+      pos = (double) priv->drop_target_x + OVERLAP - tab_size / 2;
+    }
   } else {
     return G_SOURCE_CONTINUE;
   }
 
   value = gtk_adjustment_get_value (priv->adjustment);
   page_size = gtk_adjustment_get_page_size (priv->adjustment);
-  autoscroll_area = tab_width / 2;
+  autoscroll_area = tab_size / 2;
 
-  x = CLAMP (x,
-             autoscroll_area,
-             priv->allocated_width - tab_width - autoscroll_area);
+  if (WRAP)
+    pos = CLAMP (pos,
+                 autoscroll_area,
+                 priv->allocated_height - tab_size - autoscroll_area);
+  else
+    pos = CLAMP (pos,
+                 autoscroll_area,
+                 priv->allocated_width - tab_size - autoscroll_area);
 
   time = gdk_frame_clock_get_frame_time (frame_clock);
   delta_ms = (time - priv->drag_autoscroll_prev_time) / 1000.0;
 
   start_threshold = value + autoscroll_area;
-  end_threshold = value + page_size - tab_width - autoscroll_area;
+  end_threshold = value + page_size - tab_size - autoscroll_area;
   autoscroll_factor = 0;
 
-  if (x < start_threshold)
-    autoscroll_factor = -(start_threshold - x) / autoscroll_area;
-  else if (x > end_threshold)
-    autoscroll_factor = (x - end_threshold) / autoscroll_area;
+  if (pos < start_threshold)
+    autoscroll_factor = -(start_threshold - pos) / autoscroll_area;
+  else if (pos > end_threshold)
+    autoscroll_factor = (pos - end_threshold) / autoscroll_area;
 
   autoscroll_factor = CLAMP (autoscroll_factor, -1, 1);
   autoscroll_factor = adw_ease_in_cubic (autoscroll_factor);
@@ -1377,7 +1464,11 @@ drag_autoscroll_cb (GtkWidget      *widget,
   else
     offset = (int) floor (autoscroll_factor * delta_ms * AUTOSCROLL_SPEED);
 
-  priv->reorder_x += offset;
+  if (WRAP)
+    priv->reorder_y += offset;
+  else
+    priv->reorder_x += offset;
+
   gtk_adjustment_set_value (priv->adjustment, value + offset);
   update_drag_reodering (self);
 
@@ -1493,14 +1584,15 @@ reorder_begin_cb (AdwTabListBase *self,
 {
   AdwTabListBasePrivate *priv = adw_tab_list_base_get_instance_private (self);
 
-  priv->reorder_start_pos = gtk_adjustment_get_value (priv->adjustment);
+  if (WRAP)
+    start_y += gtk_adjustment_get_value (priv->adjustment);
+  else
+    start_x += gtk_adjustment_get_value (priv->adjustment);
 
-  start_x += priv->reorder_start_pos;
+  priv->pressed_tab = find_tab_info_at (self, start_x, start_y);
 
-  priv->pressed_tab = find_tab_info_at (self, start_x);
-
-  priv->drag_offset_x = start_x - get_tab_position (self, priv->pressed_tab);
-  priv->drag_offset_y = start_y;
+  priv->drag_offset_x = start_x - get_tab_x (self, priv->pressed_tab);
+  priv->drag_offset_y = start_y - get_tab_y (self, priv->pressed_tab);
 
   if (!priv->reorder_animation) {
     priv->reorder_x = (int) round (start_x - priv->drag_offset_x);
@@ -1543,7 +1635,7 @@ check_dnd_threshold (AdwTabListBase *self,
 
   graphene_rect_init (&rect, 0, 0,
                       priv->allocated_width,
-                      gtk_widget_get_height (GTK_WIDGET (self)));
+                      priv->allocated_height);
   graphene_rect_inset (&rect, -threshold, -threshold);
 
   return !graphene_rect_contains_point (&rect, &GRAPHENE_POINT_INIT (x, y));
@@ -1575,8 +1667,13 @@ reorder_update_cb (AdwTabListBase *self,
   gtk_gesture_drag_get_start_point (GTK_GESTURE_DRAG (gesture),
                                     &start_x, &start_y);
 
-  x = start_x + gtk_adjustment_get_value (priv->adjustment) + offset_x;
+  x = start_x + offset_x;
   y = start_y + offset_y;
+
+  if (WRAP)
+    y += gtk_adjustment_get_value (priv->adjustment);
+  else
+    x += gtk_adjustment_get_value (priv->adjustment);
 
   start_drag_reodering (self, priv->pressed_tab, x, y);
 
@@ -1661,7 +1758,7 @@ select_page (AdwTabListBase *self,
   gtk_widget_set_focus_child (GTK_WIDGET (self),
                               GTK_WIDGET (priv->selected_tab->tab));
 
-  if (priv->selected_tab->width >= 0)
+  if (priv->selected_tab->width >= 0 && priv->selected_tab->height >= 0)
     scroll_to_tab (self, priv->selected_tab, FOCUS_ANIMATION_DURATION);
 }
 
@@ -1709,8 +1806,10 @@ create_tab_info (AdwTabListBase *self,
 
   info = g_new0 (TabInfo, 1);
   info->page = page;
-  info->pos = -1;
+  info->pos_x = -1;
+  info->pos_y = -1;
   info->width = -1;
+  info->height = -1;
   info->tab = g_object_new (ADW_TAB_LIST_BASE_GET_CLASS (self)->item_type,
                             "view", priv->view,
                             "pinned", priv->pinned,
@@ -1843,7 +1942,7 @@ page_detached_cb (AdwTabListBase *self,
       }
     }
 
-    if (is_last)
+    if (is_last && !WRAP)
       set_tab_resize_mode (self, priv->inverted ? TAB_RESIZE_NORMAL : TAB_RESIZE_FIXED_END_PADDING);
     else
       set_tab_resize_mode (self, TAB_RESIZE_FIXED_TAB_WIDTH);
@@ -2017,7 +2116,8 @@ insert_animation_value_cb (double   value,
 static void
 insert_placeholder (AdwTabListBase *self,
                     AdwTabPage     *page,
-                    int             pos)
+                    int             pos_x,
+                    int             pos_y)
 {
   AdwTabListBasePrivate *priv = adw_tab_list_base_get_instance_private (self);
   TabInfo *info = priv->reorder_placeholder;
@@ -2041,7 +2141,7 @@ insert_placeholder (AdwTabListBase *self,
 
     info->reorder_ignore_bounds = TRUE;
 
-    if (priv->adjustment) {
+    if (priv->adjustment && !WRAP) {
       double page_size = gtk_adjustment_get_page_size (priv->adjustment);
 
       if (priv->allocated_width > page_size) {
@@ -2054,7 +2154,7 @@ insert_placeholder (AdwTabListBase *self,
       }
     }
 
-    index = calculate_placeholder_index (self, pos + priv->placeholder_scroll_offset);
+    index = calculate_placeholder_index (self, pos_x + priv->placeholder_scroll_offset); // TODO pos_y
 
     priv->tabs = g_list_insert (priv->tabs, info, index);
     priv->n_tabs++;
@@ -2351,7 +2451,9 @@ create_drag_icon (AdwTabListBase *self,
   icon->drag = drag;
 
   icon->width = predict_tab_width (self, priv->reordered_tab, FALSE);
+  icon->height = priv->reordered_tab->height;
   icon->target_width = icon->width;
+  icon->target_height = icon->height;
 
   icon->tab = g_object_new (ADW_TAB_LIST_BASE_GET_CLASS (self)->item_type,
                             "view", priv->view,
@@ -2388,18 +2490,22 @@ icon_resize_animation_value_cb (double   value,
                                 gpointer user_data)
 {
   DragIcon *icon = user_data;
-  double relative_pos;
+  double relative_x, relative_y;
 
-  relative_pos = (double) icon->hotspot_x / icon->width;
+  relative_x = (double) icon->hotspot_x / icon->width;
+  relative_y = (double) icon->hotspot_y / icon->height;
 
-  icon->width = (int) round (value);
+  icon->width = (int) round (adw_lerp (icon->source_width, icon->target_width, value));
+  icon->height = (int) round (adw_lerp (icon->source_height, icon->target_height, value));
 
   adw_tab_item_set_display_width (icon->tab, icon->width);
+  adw_tab_item_set_display_height (icon->tab, icon->height);
   gtk_widget_set_size_request (GTK_WIDGET (icon->tab),
                                icon->width + icon->tab_margin.left + icon->tab_margin.right,
-                               -1);
+                               icon->height + icon->tab_margin.top + icon->tab_margin.bottom);
 
-  icon->hotspot_x = (int) round (icon->width * relative_pos);
+  icon->hotspot_x = (int) round (icon->width * relative_x);
+  icon->hotspot_y = (int) round (icon->height * relative_y);
 
   gdk_drag_set_hotspot (icon->drag,
                         icon->hotspot_x + icon->tab_margin.left,
@@ -2418,21 +2524,27 @@ icon_resize_animation_done_cb (gpointer user_data)
 
 static void
 resize_drag_icon (AdwTabListBase *self,
-                  int             width)
+                  int             width,
+                  int             height)
 {
   AdwTabListBasePrivate *priv = adw_tab_list_base_get_instance_private (self);
   DragIcon *icon = priv->drag_icon;
 
-  if (width == icon->target_width)
+  if (width == icon->target_width &&
+      height == icon->target_height)
     return;
 
   if (icon->resize_animation)
     adw_animation_stop (icon->resize_animation);
 
+  icon->source_width = icon->width;
+  icon->source_height = icon->height;
+
   icon->target_width = width;
+  icon->target_height = height;
 
   icon->resize_animation =
-    adw_animation_new (GTK_WIDGET (icon->tab), icon->width, width,
+    adw_animation_new (GTK_WIDGET (icon->tab), 0, 1,
                        ICON_RESIZE_ANIMATION_DURATION,
                        icon_resize_animation_value_cb,
                        icon);
@@ -2528,26 +2640,32 @@ tab_drag_enter_motion_cb (AdwTabListBase *self,
   if (!priv->view || !is_in_the_same_group (self, source_list))
     return 0;
 
-  x += gtk_adjustment_get_value (priv->adjustment);
+  if (WRAP)
+    y += gtk_adjustment_get_value (priv->adjustment);
+  else
+    x += gtk_adjustment_get_value (priv->adjustment);
 
   priv->can_remove_placeholder = FALSE;
 
   if (!priv->reorder_placeholder || !priv->reorder_placeholder->page) {
     AdwTabPage *page = source_priv->detached_page;
-    double center = x - source_priv->drag_icon->hotspot_x + source_priv->drag_icon->width / 2;
+    double center_x = x - source_priv->drag_icon->hotspot_x + source_priv->drag_icon->width / 2;
+    double center_y = y - source_priv->drag_icon->hotspot_y + source_priv->drag_icon->height / 2;
 
-    insert_placeholder (self, page, center);
+    insert_placeholder (self, page, center_x, center_y);
 
     priv->indirect_reordering = TRUE;
 
-    resize_drag_icon (source_list, predict_tab_width (self, priv->reorder_placeholder, TRUE));
+    resize_drag_icon (source_list, predict_tab_width (self, priv->reorder_placeholder, TRUE), 100); // TODO
     adw_tab_item_set_display_width (priv->reorder_placeholder->tab, source_priv->drag_icon->target_width);
+    adw_tab_item_set_display_height (priv->reorder_placeholder->tab, source_priv->drag_icon->target_height);
     adw_tab_item_set_inverted (source_priv->drag_icon->tab, priv->inverted);
 
     priv->drag_offset_x = source_priv->drag_icon->hotspot_x;
     priv->drag_offset_y = source_priv->drag_icon->hotspot_y;
 
     priv->reorder_x = (int) round (x - source_priv->drag_icon->hotspot_x);
+    priv->reorder_y = (int) round (y - source_priv->drag_icon->hotspot_y);
 
     start_drag_reodering (self, priv->reorder_placeholder, x, y);
 
@@ -2555,6 +2673,7 @@ tab_drag_enter_motion_cb (AdwTabListBase *self,
   }
 
   priv->reorder_x = (int) round (x - source_priv->drag_icon->hotspot_x);
+  priv->reorder_y = (int) round (y - source_priv->drag_icon->hotspot_y);
 
   update_drag_reodering (self);
 
@@ -2695,9 +2814,12 @@ drag_enter_motion_cb (AdwTabListBase          *self,
   if (source)
     return;
 
-  x += gtk_adjustment_get_value (priv->adjustment);
+  if (WRAP)
+    y += gtk_adjustment_get_value (priv->adjustment);
+  else
+    x += gtk_adjustment_get_value (priv->adjustment);
 
-  info = find_tab_info_at (self, x);
+  info = find_tab_info_at (self, x, y);
 
   if (!info) {
     drag_leave_cb (self, controller);
@@ -2706,6 +2828,7 @@ drag_enter_motion_cb (AdwTabListBase          *self,
   }
 
   priv->drop_target_x = x;
+  priv->drop_target_y = y;
   set_drop_target_tab (self, info);
 
   start_autoscroll (self);
@@ -2772,14 +2895,17 @@ do_popup (AdwTabListBase *self,
     rect.x = x;
     rect.y = y;
   } else {
-    rect.x = info->pos;
-    rect.y = gtk_widget_get_allocated_height (GTK_WIDGET (info->tab));
+    rect.x = info->pos_x;
+    rect.y = info->pos_y + gtk_widget_get_allocated_height (GTK_WIDGET (info->tab));
 
     if (gtk_widget_get_direction (GTK_WIDGET (self)) == GTK_TEXT_DIR_RTL)
       rect.x += info->width;
   }
 
-  rect.x -= gtk_adjustment_get_value (priv->adjustment);
+  if (WRAP)
+    rect.y -= gtk_adjustment_get_value (priv->adjustment);
+  else
+    rect.x -= gtk_adjustment_get_value (priv->adjustment);
   rect.width = 0;
   rect.height = 0;
 
@@ -2795,7 +2921,7 @@ long_pressed_cb (AdwTabListBase *self,
                  GtkGesture     *gesture)
 {
   AdwTabListBasePrivate *priv = adw_tab_list_base_get_instance_private (self);
-  TabInfo *info = find_tab_info_at (self, x);
+  TabInfo *info = find_tab_info_at (self, x, y);
 
   gtk_gesture_set_state (priv->drag_gesture, GTK_EVENT_SEQUENCE_DENIED);
 
@@ -2804,7 +2930,10 @@ long_pressed_cb (AdwTabListBase *self,
     return;
   }
 
-  x += gtk_adjustment_get_value (priv->adjustment);
+  if (WRAP)
+    y += gtk_adjustment_get_value (priv->adjustment);
+  else
+    x += gtk_adjustment_get_value (priv->adjustment);
 
   gtk_gesture_set_state (gesture, GTK_EVENT_SEQUENCE_CLAIMED);
   do_popup (self, priv->pressed_tab, x, y);
@@ -2869,9 +2998,12 @@ pressed_cb (AdwTabListBase *self,
   if (is_touchscreen (gesture))
     return;
 
-  x += gtk_adjustment_get_value (priv->adjustment);
+  if (WRAP)
+    y += gtk_adjustment_get_value (priv->adjustment);
+  else
+    x += gtk_adjustment_get_value (priv->adjustment);
 
-  info = find_tab_info_at (self, x);
+  info = find_tab_info_at (self, x, y);
 
   if (!info || !info->page) {
     gtk_gesture_set_state (gesture, GTK_EVENT_SEQUENCE_DENIED);
@@ -2919,9 +3051,12 @@ released_cb (AdwTabListBase *self,
   TabInfo *info;
   guint button;
 
-  x += gtk_adjustment_get_value (priv->adjustment);
+  if (WRAP)
+    y += gtk_adjustment_get_value (priv->adjustment);
+  else
+    x += gtk_adjustment_get_value (priv->adjustment);
 
-  info = find_tab_info_at (self, x);
+  info = find_tab_info_at (self, x, y);
 
   if (!info || !info->page) {
     gtk_gesture_set_state (gesture, GTK_EVENT_SEQUENCE_DENIED);
@@ -2942,6 +3077,30 @@ released_cb (AdwTabListBase *self,
 }
 
 /* Overrides */
+
+static int
+get_n_columns (AdwTabListBase *self,
+               int             for_width)
+{
+  AdwTabListBasePrivate *priv = adw_tab_list_base_get_instance_private (self);
+  int tab_width = 0;
+  GList *l;
+
+  if (!WRAP || for_width < 0)
+    return priv->n_tabs;
+
+  for (l = priv->tabs; l; l = l->next) {
+    TabInfo *info = l->data;
+    int child_width;
+
+    gtk_widget_measure (GTK_WIDGET (info->tab), GTK_ORIENTATION_HORIZONTAL, -1,
+                        NULL, &child_width, NULL, NULL);
+
+    tab_width = MAX (tab_width, child_width);
+  }
+
+  return (int) floor ((double) for_width / tab_width);
+}
 
 static void
 adw_tab_list_base_measure (GtkWidget      *widget,
@@ -2972,41 +3131,81 @@ adw_tab_list_base_measure (GtkWidget      *widget,
     return;
   }
 
-  if (orientation == GTK_ORIENTATION_HORIZONTAL) {
-    int width = priv->end_padding;
-    GList *l;
+  if (WRAP) {
+    if (orientation == GTK_ORIENTATION_HORIZONTAL) {
+      GList *l;
+      min = nat = 0;
 
-    for (l = priv->tabs; l; l = l->next) {
-      TabInfo *info = l->data;
-      int child_width;
+      for (l = priv->tabs; l; l = l->next) {
+        TabInfo *info = l->data;
+        int child_width;
 
-      gtk_widget_measure (GTK_WIDGET (info->tab), orientation, -1,
-                          NULL, &child_width, NULL, NULL);
+        gtk_widget_measure (GTK_WIDGET (info->tab), orientation, -1,
+                            NULL, &child_width, NULL, NULL);
 
-      width += calculate_tab_width (info, child_width) - OVERLAP;
+        min = MAX (min, calculate_tab_width (info, child_width));
+        nat += child_width;
+      }
+    } else {
+      int n_columns, n_rows;
+      GList *l;
+
+      min = nat = 0;
+
+      n_columns = get_n_columns (self, for_size);
+      n_rows = (int) ceil ((double) priv->n_tabs / n_columns);
+
+      for (l = priv->tabs; l; l = l->next) {
+        TabInfo *info = l->data;
+        int child_height;
+
+        gtk_widget_measure (GTK_WIDGET (info->tab), orientation, -1,
+                            NULL, &child_height, NULL, NULL);
+
+        min = MAX (min, child_height);
+        nat = MAX (nat, child_height);
+      }
+
+      min *= n_rows;
+      nat *= n_rows;
     }
-
-    if (!priv->pinned)
-      width -= OVERLAP;
-
-    min = nat = MAX (priv->last_width, width);
   } else {
-    GList *l;
+    if (orientation == GTK_ORIENTATION_HORIZONTAL) {
+      int width = priv->end_padding;
+      GList *l;
 
-    min = nat = 0;
+      for (l = priv->tabs; l; l = l->next) {
+        TabInfo *info = l->data;
+        int child_width;
 
-    for (l = priv->tabs; l; l = l->next) {
-      TabInfo *info = l->data;
-      int child_min, child_nat;
+        gtk_widget_measure (GTK_WIDGET (info->tab), orientation, -1,
+                            NULL, &child_width, NULL, NULL);
 
-      gtk_widget_measure (GTK_WIDGET (info->tab), orientation, -1,
-                          &child_min, &child_nat, NULL, NULL);
+        width += calculate_tab_width (info, child_width) - OVERLAP;
+      }
 
-      if (child_min > min)
-        min = child_min;
+      if (!priv->pinned)
+        width -= OVERLAP;
 
-      if (child_nat > nat)
-        nat = child_nat;
+      min = nat = MAX (priv->last_width, width);
+    } else {
+      GList *l;
+
+      min = nat = 0;
+
+      for (l = priv->tabs; l; l = l->next) {
+        TabInfo *info = l->data;
+        int child_min, child_nat;
+
+        gtk_widget_measure (GTK_WIDGET (info->tab), orientation, -1,
+                            &child_min, &child_nat, NULL, NULL);
+
+        if (child_min > min)
+          min = child_min;
+
+        if (child_nat > nat)
+          nat = child_nat;
+      }
     }
   }
 
@@ -3040,20 +3239,37 @@ adw_tab_list_base_size_allocate (GtkWidget *widget,
   gtk_widget_measure (priv->background, GTK_ORIENTATION_HORIZONTAL, -1,
                       NULL, NULL, NULL, NULL);
   gtk_widget_allocate (priv->background, width, height, baseline, NULL);
-
-  adw_tab_list_base_measure (widget, GTK_ORIENTATION_HORIZONTAL, -1,
-                       &priv->allocated_width, NULL, NULL, NULL);
-  priv->allocated_width = MAX (priv->allocated_width, width);
+  int tab_height = height;
 
   value = gtk_adjustment_get_value (priv->adjustment);
 
-  gtk_adjustment_configure (priv->adjustment,
-                            value,
-                            0,
-                            priv->allocated_width,
-                            width * 0.1,
-                            width * 0.9,
-                            width);
+  if (WRAP) {
+    adw_tab_list_base_measure (widget, GTK_ORIENTATION_VERTICAL, width,
+                               NULL, &priv->allocated_height, NULL, NULL);
+    priv->allocated_height = MAX (priv->allocated_height, height);
+    priv->allocated_width = width;
+
+    gtk_adjustment_configure (priv->adjustment,
+                              value,
+                              0,
+                              priv->allocated_height,
+                              height * 0.1,
+                              height * 0.9,
+                              height);
+  } else {
+    adw_tab_list_base_measure (widget, GTK_ORIENTATION_HORIZONTAL, -1,
+                               &priv->allocated_width, NULL, NULL, NULL);
+    priv->allocated_width = MAX (priv->allocated_width, width);
+    priv->allocated_height = height;
+
+    gtk_adjustment_configure (priv->adjustment,
+                              value,
+                              0,
+                              priv->allocated_width,
+                              width * 0.1,
+                              width * 0.9,
+                              width);
+  }
 
   if (priv->context_menu)
     gtk_popover_present (priv->context_menu);
@@ -3063,7 +3279,23 @@ adw_tab_list_base_size_allocate (GtkWidget *widget,
 
   is_rtl = gtk_widget_get_direction (widget) == GTK_TEXT_DIR_RTL;
 
-  if (priv->pinned) {
+  if (WRAP) {
+    tab_height = 0;
+
+    for (l = priv->tabs; l; l = l->next) {
+      TabInfo *info = l->data;
+      int child_width, child_height;
+
+      gtk_widget_measure (GTK_WIDGET (info->tab), GTK_ORIENTATION_HORIZONTAL, -1,
+                          NULL, &child_width, NULL, NULL);
+      gtk_widget_measure (GTK_WIDGET (info->tab), GTK_ORIENTATION_VERTICAL, child_width,
+                          NULL, &child_height, NULL, NULL);
+
+      info->width = calculate_tab_width (info, child_width);
+      info->height = child_height;
+      tab_height = MAX (tab_height, child_height);
+    }
+  } else if (priv->pinned) {
     for (l = priv->tabs; l; l = l->next) {
       TabInfo *info = l->data;
       int child_width;
@@ -3072,6 +3304,7 @@ adw_tab_list_base_size_allocate (GtkWidget *widget,
                           NULL, &child_width, NULL, NULL);
 
       info->width = calculate_tab_width (info, child_width);
+      info->height = height;
     }
   } else if (priv->tab_resize_mode == TAB_RESIZE_FIXED_TAB_WIDTH) {
     priv->end_padding = priv->allocated_width + OVERLAP;
@@ -3080,6 +3313,7 @@ adw_tab_list_base_size_allocate (GtkWidget *widget,
       TabInfo *info = l->data;
 
       info->width = calculate_tab_width (info, info->last_width);
+      info->height = height;
       priv->end_padding -= info->width - OVERLAP;
     }
   } else {
@@ -3090,6 +3324,7 @@ adw_tab_list_base_size_allocate (GtkWidget *widget,
       TabInfo *info = l->data;
 
       info->width = calculate_tab_width (info, tab_width);
+      info->height = height;
       excess -= info->width - OVERLAP;
     }
 
@@ -3107,27 +3342,75 @@ adw_tab_list_base_size_allocate (GtkWidget *widget,
 
   pos = is_rtl ? priv->allocated_width + OVERLAP : -OVERLAP;
 
-  for (l = priv->tabs; l; l = l->next) {
-    TabInfo *info = l->data;
+  if (WRAP) {
+    int n_columns;
+    int column = 0;
+    int pos_y = 0;
 
-    if (!info->appear_animation)
-      adw_tab_item_set_display_width (info->tab, info->width);
-    else if (info->page && info != priv->reorder_placeholder)
-      adw_tab_item_set_display_width (info->tab, predict_tab_width (self, info, FALSE));
+    n_columns = get_n_columns (self, width);
 
-    info->pos = pos + calculate_tab_offset (self, info, FALSE);
+    for (l = priv->tabs; l; l = l->next) {
+      TabInfo *info = l->data;
 
-    if (is_rtl)
-      info->pos -= info->width;
+      if (!info->appear_animation)
+        adw_tab_item_set_display_width (info->tab, info->width);
+      else if (info->page && info != priv->reorder_placeholder)
+        adw_tab_item_set_display_width (info->tab, predict_tab_width (self, info, FALSE));
+      adw_tab_item_set_display_height (info->tab, tab_height);
 
-    child_allocation.x = ((info == priv->reordered_tab) ? priv->reorder_window_x : info->pos) - (int) floor (value);
-    child_allocation.y = 0;
-    child_allocation.width = info->width;
-    child_allocation.height = height;
+      info->pos_x = pos + calculate_tab_offset (self, info, FALSE);
+      info->pos_y = pos_y;
 
-    gtk_widget_size_allocate (GTK_WIDGET (info->tab), &child_allocation, baseline);
+      if ((column == 0 && info->reorder_offset < 0) ||
+          (column == n_columns - 1 && info->reorder_offset > 0)) {
+        info->pos_x = pos - (info->width - OVERLAP) * (n_columns - 1) * info->reorder_offset;
+        info->pos_y += tab_height * info->reorder_offset;
+      }
 
-    pos += (is_rtl ? -1 : 1) * (info->width - OVERLAP);
+      if (is_rtl)
+        info->pos_x -= info->width;
+
+      child_allocation.x = ((info == priv->reordered_tab) ? priv->reorder_window_x : info->pos_x);
+      child_allocation.y = ((info == priv->reordered_tab) ? priv->reorder_window_y : info->pos_y) - (int) floor (value);
+      child_allocation.width = info->width;
+      child_allocation.height = tab_height;
+
+      gtk_widget_size_allocate (GTK_WIDGET (info->tab), &child_allocation, baseline);
+
+      pos += (is_rtl ? -1 : 1) * (info->width - OVERLAP);
+      column++;
+
+      if (column >= n_columns) {
+        column = 0;
+        pos = is_rtl ? priv->allocated_width + OVERLAP : -OVERLAP;
+        pos_y += tab_height;
+      }
+    }
+  } else {
+    for (l = priv->tabs; l; l = l->next) {
+      TabInfo *info = l->data;
+
+      if (!info->appear_animation)
+        adw_tab_item_set_display_width (info->tab, info->width);
+      else if (info->page && info != priv->reorder_placeholder)
+        adw_tab_item_set_display_width (info->tab, predict_tab_width (self, info, FALSE));
+      adw_tab_item_set_display_height (info->tab, height);
+
+      info->pos_x = pos + calculate_tab_offset (self, info, FALSE);
+      info->pos_y = 0;
+
+      if (is_rtl)
+        info->pos_x -= info->width;
+
+      child_allocation.x = ((info == priv->reordered_tab) ? priv->reorder_window_x : info->pos_x) - (int) floor (value);
+      child_allocation.y = 0;
+      child_allocation.width = info->width;
+      child_allocation.height = height;
+
+      gtk_widget_size_allocate (GTK_WIDGET (info->tab), &child_allocation, baseline);
+
+      pos += (is_rtl ? -1 : 1) * (info->width - OVERLAP);
+    }
   }
 
   if (priv->scheduled_scroll.info) {
@@ -3155,6 +3438,12 @@ adw_tab_list_base_size_allocate (GtkWidget *widget,
   update_visible (self);
 }
 
+static GtkSizeRequestMode
+adw_tab_list_base_get_request_mode (GtkWidget *widget)
+{
+  return WRAP ? GTK_SIZE_REQUEST_HEIGHT_FOR_WIDTH : GTK_SIZE_REQUEST_CONSTANT_SIZE;
+}
+
 static void
 snapshot_tab (AdwTabListBase *self,
               GtkSnapshot    *snapshot,
@@ -3173,7 +3462,7 @@ snapshot_tab (AdwTabListBase *self,
   rect.height = gtk_widget_get_height (GTK_WIDGET (self));
   scroll_pos = (int) floor (gtk_adjustment_get_value (priv->adjustment));
 
-  pos = get_tab_position (self, info);
+  pos = get_tab_x (self, info);
   width = info->width;
 
   n = cairo_region_num_rectangles (clip_region);
@@ -3219,6 +3508,11 @@ adw_tab_list_base_snapshot (GtkWidget   *widget,
   cairo_region_t *region;
   int i, n;
   GList *l;
+
+  if (WRAP) {
+    GTK_WIDGET_CLASS (adw_tab_list_base_parent_class)->snapshot (widget, snapshot);
+    return;
+  }
 
   rect.width = w;
   rect.height = h;
@@ -3300,19 +3594,17 @@ adw_tab_list_base_direction_changed (GtkWidget        *widget,
 {
   AdwTabListBase *self = ADW_TAB_LIST_BASE (widget);
   AdwTabListBasePrivate *priv = adw_tab_list_base_get_instance_private (self);
-  double upper, page_size;
-
-  if (!priv->adjustment)
-    return;
 
   if (gtk_widget_get_direction (widget) == previous_direction)
     return;
 
-  upper = gtk_adjustment_get_upper (priv->adjustment);
-  page_size = gtk_adjustment_get_page_size (priv->adjustment);
+  if (!WRAP) {
+    double upper = gtk_adjustment_get_upper (priv->adjustment);
+    double page_size = gtk_adjustment_get_page_size (priv->adjustment);
 
-  gtk_adjustment_set_value (priv->adjustment,
-                            upper - page_size - priv->adjustment_prev_value);
+    gtk_adjustment_set_value (priv->adjustment,
+                              upper - page_size - priv->adjustment_prev_value);
+  }
 
   if (priv->context_menu) {
     if (gtk_widget_get_direction (GTK_WIDGET (self)) == GTK_TEXT_DIR_RTL)
@@ -3334,7 +3626,7 @@ adw_tab_list_base_dispose (GObject *object)
 
   priv->drag_gesture = NULL;
   adw_tab_list_base_set_view (self, NULL);
-  set_hadjustment (self, NULL);
+  set_adjustment (self, NULL);
 
   G_OBJECT_CLASS (adw_tab_list_base_parent_class)->dispose (object);
 }
@@ -3413,10 +3705,14 @@ adw_tab_list_base_set_property (GObject      *object,
     break;
 
   case PROP_HADJUSTMENT:
-    set_hadjustment (self, g_value_get_object (value));
+    if (!WRAP)
+      set_adjustment (self, g_value_get_object (value));
     break;
 
   case PROP_VADJUSTMENT:
+    if (WRAP)
+      set_adjustment (self, g_value_get_object (value));
+    break;
   case PROP_HSCROLL_POLICY:
   case PROP_VSCROLL_POLICY:
     break;
@@ -3439,6 +3735,7 @@ adw_tab_list_base_class_init (AdwTabListBaseClass *klass)
 
   widget_class->measure = adw_tab_list_base_measure;
   widget_class->size_allocate = adw_tab_list_base_size_allocate;
+  widget_class->get_request_mode = adw_tab_list_base_get_request_mode;
   widget_class->snapshot = adw_tab_list_base_snapshot;
   widget_class->focus = adw_tab_list_base_focus;
   widget_class->unrealize = adw_tab_list_base_unrealize;
@@ -3535,8 +3832,6 @@ adw_tab_list_base_init (AdwTabListBase *self)
 
   priv->can_remove_placeholder = TRUE;
   priv->expand_tabs = TRUE;
-
-  gtk_widget_set_overflow (GTK_WIDGET (self), GTK_OVERFLOW_HIDDEN);
 
   priv->background = adw_gizmo_new ("background", NULL, NULL, NULL, NULL, NULL, NULL);
   gtk_widget_set_can_target (priv->background, FALSE);
