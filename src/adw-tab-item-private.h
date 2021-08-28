@@ -27,6 +27,13 @@ struct _AdwTabItemClass
 
   void (*connect_page)    (AdwTabItem *self);
   void (*disconnect_page) (AdwTabItem *self);
+
+  int  (*measure_contents)  (AdwTabItem     *self,
+                             GtkOrientation  orientation,
+                             int             for_size);
+  void (*allocate_contents) (AdwTabItem     *self,
+                             GtkAllocation  *alloc,
+                             int             baseline);
 };
 
 AdwTabView *adw_tab_item_get_view (AdwTabItem *self);
@@ -40,6 +47,10 @@ gboolean adw_tab_item_get_pinned (AdwTabItem *self);
 int  adw_tab_item_get_display_width (AdwTabItem *self);
 void adw_tab_item_set_display_width (AdwTabItem *self,
                                      int         width);
+
+int  adw_tab_item_get_display_height (AdwTabItem *self);
+void adw_tab_item_set_display_height (AdwTabItem *self,
+                                      int         height);
 
 gboolean adw_tab_item_get_hovering (AdwTabItem *self);
 

@@ -7,6 +7,7 @@ struct _AdwTabViewDemoWindow
   AdwWindow parent_instance;
   AdwTabView *view;
   AdwTabBar *tab_bar;
+  AdwTabOverview *tab_overview;
 
   GActionMap *tab_action_group;
 
@@ -74,21 +75,23 @@ add_page (AdwTabViewDemoWindow *self,
           const char           *title,
           GIcon                *icon)
 {
-  GtkWidget *content;
+  GtkWidget *content, *entry;
   AdwTabPage *page;
 
-  content = g_object_new (GTK_TYPE_ENTRY,
+  entry = g_object_new (GTK_TYPE_ENTRY,
                           "text", title,
                           "halign", GTK_ALIGN_CENTER,
                           "valign", GTK_ALIGN_CENTER,
                           NULL);
 
+  content = g_object_new (ADW_TYPE_BIN, "child", entry, NULL);
+
   page = adw_tab_view_add_page (self->view, GTK_WIDGET (content), parent);
 
-  g_object_bind_property (content, "text",
+  g_object_bind_property (entry, "text",
                           page, "title",
                           G_BINDING_SYNC_CREATE | G_BINDING_BIDIRECTIONAL);
-  g_object_bind_property_full (content, "text",
+  g_object_bind_property_full (entry, "text",
                                page, "tooltip",
                                G_BINDING_SYNC_CREATE,
                                text_to_tooltip, NULL,
@@ -482,6 +485,7 @@ adw_tab_view_demo_window_class_init (AdwTabViewDemoWindowClass *klass)
   gtk_widget_class_set_template_from_resource (widget_class, "/org/gnome/Adwaita/Demo/ui/adw-tab-view-demo-window.ui");
   gtk_widget_class_bind_template_child (widget_class, AdwTabViewDemoWindow, view);
   gtk_widget_class_bind_template_child (widget_class, AdwTabViewDemoWindow, tab_bar);
+  gtk_widget_class_bind_template_child (widget_class, AdwTabViewDemoWindow, tab_overview);
   gtk_widget_class_bind_template_callback (widget_class, page_detached_cb);
   gtk_widget_class_bind_template_callback (widget_class, setup_menu_cb);
   gtk_widget_class_bind_template_callback (widget_class, create_window_cb);
@@ -522,6 +526,9 @@ adw_tab_view_demo_window_init (AdwTabViewDemoWindow *self)
   adw_tab_bar_setup_extra_drop_target (self->tab_bar,
                                        GDK_ACTION_COPY,
                                        (GType[1]) { G_TYPE_STRING }, 1);
+  adw_tab_overview_setup_extra_drop_target (self->tab_overview,
+                                            GDK_ACTION_COPY,
+                                            (GType[1]) { G_TYPE_STRING }, 1);
 }
 
 AdwTabViewDemoWindow *

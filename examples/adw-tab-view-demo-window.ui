@@ -7,41 +7,56 @@
     <property name="default-width">800</property>
     <property name="default-height">600</property>
     <child>
-      <object class="GtkBox">
-        <property name="orientation">vertical</property>
-        <child>
-          <object class="GtkHeaderBar">
-            <child type="start">
-              <object class="GtkButton">
-                <property name="action-name">win.tab-new</property>
-                <property name="icon-name">tab-new-symbolic</property>
+      <object class="AdwTabOverview" id="tab_overview">
+        <property name="view">view</property>
+        <signal name="extra-drag-drop" handler="extra_drag_drop_cb" swapped="true"/>
+        <property name="child">
+          <object class="GtkBox">
+            <style>
+              <class name="background"/>
+            </style>
+            <property name="orientation">vertical</property>
+            <child>
+              <object class="GtkHeaderBar">
+                <child type="start">
+                  <object class="GtkButton">
+                    <property name="action-name">win.tab-new</property>
+                    <property name="icon-name">tab-new-symbolic</property>
+                  </object>
+                </child>
+                <child type="end">
+                  <object class="GtkMenuButton">
+                    <property name="menu-model">primary_menu</property>
+                    <property name="icon-name">open-menu-symbolic</property>
+                  </object>
+                </child>
+                <child type="end">
+                  <object class="AdwTabButton">
+                    <property name="view">view</property>
+                    <property name="action-name">overview.open</property>
+                  </object>
+                </child>
               </object>
             </child>
-            <child type="end">
-              <object class="GtkMenuButton">
-                <property name="menu-model">primary_menu</property>
-                <property name="icon-name">open-menu-symbolic</property>
+            <child>
+              <object class="AdwTabBar" id="tab_bar">
+                <property name="view">view</property>
+                <signal name="extra-drag-drop" handler="extra_drag_drop_cb" swapped="true"/>
+              </object>
+            </child>
+            <child>
+              <object class="AdwTabView" id="view">
+                <property name="vexpand">True</property>
+                <property name="menu-model">tab_menu</property>
+                <property name="shortcut-widget">AdwTabViewDemoWindow</property>
+                <signal name="page-detached" handler="page_detached_cb" swapped="true"/>
+                <signal name="setup-menu" handler="setup_menu_cb" swapped="true"/>
+                <signal name="create-window" handler="create_window_cb" swapped="true"/>
+                <signal name="indicator-activated" handler="indicator_activated_cb" swapped="true"/>
               </object>
             </child>
           </object>
-        </child>
-        <child>
-          <object class="AdwTabBar" id="tab_bar">
-            <property name="view">view</property>
-            <signal name="extra-drag-drop" handler="extra_drag_drop_cb" swapped="true"/>
-          </object>
-        </child>
-        <child>
-          <object class="AdwTabView" id="view">
-            <property name="vexpand">True</property>
-            <property name="menu-model">tab_menu</property>
-            <property name="shortcut-widget">AdwTabViewDemoWindow</property>
-            <signal name="page-detached" handler="page_detached_cb" swapped="true"/>
-            <signal name="setup-menu" handler="setup_menu_cb" swapped="true"/>
-            <signal name="create-window" handler="create_window_cb" swapped="true"/>
-            <signal name="indicator-activated" handler="indicator_activated_cb" swapped="true"/>
-          </object>
-        </child>
+        </property>
       </object>
     </child>
   </template>

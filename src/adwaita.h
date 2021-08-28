@@ -56,6 +56,7 @@ G_BEGIN_DECLS
 #include "adw-swipeable.h"
 #include "adw-tab-bar.h"
 #include "adw-tab-button.h"
+#include "adw-tab-overview.h"
 #include "adw-tab-view.h"
 #include "adw-view-stack.h"
 #include "adw-view-switcher.h"

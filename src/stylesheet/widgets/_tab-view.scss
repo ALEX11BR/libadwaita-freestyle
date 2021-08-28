@@ -182,3 +182,17 @@ tabview:drop(active),
 tabbox:drop(active) {
   box-shadow: none;
 }
+
+taboverview {
+  background: mix($bg_color, $fg_color, 85%);
+}
+
+tabthumbnail > box {
+  margin: 10px;
+
+  > picture {
+    background: $bg_color;
+    box-shadow: 0 0 0 1px $borders_color;
+    border-radius: 8px;
+  }
+}

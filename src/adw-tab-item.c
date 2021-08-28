@@ -19,6 +19,7 @@ typedef struct {
   gboolean dragging;
   gboolean fully_visible;
   int display_width;
+  int display_height;
   gboolean inverted;
 } AdwTabItemPrivate;
 
@@ -33,6 +34,7 @@ enum {
   PROP_DRAGGING,
   PROP_FULLY_VISIBLE,
   PROP_DISPLAY_WIDTH,
+  PROP_DISPLAY_HEIGHT,
   PROP_INVERTED,
   LAST_PROP
 };
@@ -149,6 +151,10 @@ adw_tab_item_get_property (GObject    *object,
     g_value_set_int (value, adw_tab_item_get_display_width (self));
     break;
 
+  case PROP_DISPLAY_HEIGHT:
+    g_value_set_int (value, adw_tab_item_get_display_height (self));
+    break;
+
   case PROP_INVERTED:
     g_value_set_boolean (value, adw_tab_item_get_inverted (self));
     break;
@@ -192,6 +198,10 @@ adw_tab_item_set_property (GObject      *object,
     adw_tab_item_set_display_width (self, g_value_get_int (value));
     break;
 
+  case PROP_DISPLAY_HEIGHT:
+    adw_tab_item_set_display_height (self, g_value_get_int (value));
+    break;
+
   case PROP_INVERTED:
     adw_tab_item_set_inverted (self, g_value_get_boolean (value));
     break;
@@ -212,6 +222,56 @@ adw_tab_item_dispose (GObject *object)
 }
 
 static void
+adw_tab_item_measure (GtkWidget      *widget,
+                      GtkOrientation  orientation,
+                      int             for_size,
+                      int            *minimum,
+                      int            *natural,
+                      int            *minimum_baseline,
+                      int            *natural_baseline)
+{
+  AdwTabItem *self = ADW_TAB_ITEM (widget);
+
+  if (minimum)
+    *minimum = 0;
+  if (natural)
+    *natural = ADW_TAB_ITEM_GET_CLASS (self)->measure_contents (self, orientation, for_size);
+  if (minimum_baseline)
+    *minimum_baseline = -1;
+  if (natural_baseline)
+    *natural_baseline = -1;
+}
+
+static void
+adw_tab_item_size_allocate (GtkWidget *widget,
+                            int        width,
+                            int        height,
+                            int        baseline)
+{
+  AdwTabItem *self = ADW_TAB_ITEM (widget);
+  AdwTabItemPrivate *priv = adw_tab_item_get_instance_private (self);
+  GtkAllocation child_alloc;
+  int allocated_width, allocated_height;
+  int width_diff, height_diff;
+
+  if (!gtk_widget_get_first_child (widget))
+    return;
+
+  allocated_width = gtk_widget_get_allocated_width (widget);
+  allocated_height = gtk_widget_get_allocated_height (widget);
+
+  width_diff = MAX (0, priv->display_width - allocated_width);
+  height_diff = MAX (0, priv->display_height - allocated_height);
+
+  child_alloc.x = -width_diff / 2;
+  child_alloc.y = -height_diff / 2;
+  child_alloc.height = height + height_diff;
+  child_alloc.width = width + width_diff;
+
+  ADW_TAB_ITEM_GET_CLASS (self)->allocate_contents (self, &child_alloc, baseline);
+}
+
+static void
 adw_tab_item_class_init (AdwTabItemClass *klass)
 {
   GObjectClass *object_class = G_OBJECT_CLASS (klass);
@@ -220,6 +280,9 @@ adw_tab_item_class_init (AdwTabItemClass *klass)
   object_class->dispose = adw_tab_item_dispose;
   object_class->get_property = adw_tab_item_get_property;
   object_class->set_property = adw_tab_item_set_property;
+
+  widget_class->measure = adw_tab_item_measure;
+  widget_class->size_allocate = adw_tab_item_size_allocate;
 
   props[PROP_VIEW] =
     g_param_spec_object ("view",
@@ -267,6 +330,13 @@ adw_tab_item_class_init (AdwTabItemClass *klass)
     g_param_spec_int ("display-width",
                       "Display Width",
                       "Display Width",
+                      0, G_MAXINT, 0,
+                      G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY);
+
+  props[PROP_DISPLAY_HEIGHT] =
+    g_param_spec_int ("display-height",
+                      "Display Height",
+                      "Display Height",
                       0, G_MAXINT, 0,
                       G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY);
 
@@ -406,6 +476,39 @@ adw_tab_item_set_display_width (AdwTabItem *self,
   gtk_widget_queue_resize (GTK_WIDGET (self));
 
   g_object_notify_by_pspec (G_OBJECT (self), props[PROP_DISPLAY_WIDTH]);
+}
+
+int
+adw_tab_item_get_display_height (AdwTabItem *self)
+{
+  AdwTabItemPrivate *priv;
+
+  g_return_val_if_fail (ADW_IS_TAB_ITEM (self), 0);
+
+  priv = adw_tab_item_get_instance_private (self);
+
+  return priv->display_height;
+}
+
+void
+adw_tab_item_set_display_height (AdwTabItem *self,
+                                 int         height)
+{
+  AdwTabItemPrivate *priv;
+
+  g_return_if_fail (ADW_IS_TAB_ITEM (self));
+  g_return_if_fail (height >= 0);
+
+  priv = adw_tab_item_get_instance_private (self);
+
+  if (priv->display_height == height)
+    return;
+
+  priv->display_height = height;
+
+  gtk_widget_queue_resize (GTK_WIDGET (self));
+
+  g_object_notify_by_pspec (G_OBJECT (self), props[PROP_DISPLAY_HEIGHT]);
 }
 
 gboolean

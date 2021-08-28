@@ -3,6 +3,7 @@
   <gresource prefix="/org/gnome/Adwaita">
     <file>glsl/fade.glsl</file>
     <file>glsl/mask.glsl</file>
+    <file>glsl/tab-overview.glsl</file>
     <file preprocess="xml-stripblanks">icons/scalable/actions/adw-expander-arrow-symbolic.svg</file>
     <file preprocess="xml-stripblanks">icons/scalable/status/avatar-default-symbolic.svg</file>
     <file preprocess="xml-stripblanks">icons/scalable/status/adw-tab-counter-symbolic.svg</file>
@@ -20,6 +21,8 @@
     <file preprocess="xml-stripblanks">adw-tab.ui</file>
     <file preprocess="xml-stripblanks">adw-tab-bar.ui</file>
     <file preprocess="xml-stripblanks">adw-tab-button.ui</file>
+    <file preprocess="xml-stripblanks">adw-tab-overview.ui</file>
+    <file preprocess="xml-stripblanks">adw-tab-thumbnail.ui</file>
     <file preprocess="xml-stripblanks">adw-view-switcher-bar.ui</file>
     <file preprocess="xml-stripblanks">adw-view-switcher-button.ui</file>
     <file preprocess="xml-stripblanks">adw-view-switcher-title.ui</file>

@@ -55,6 +55,7 @@ adw_tab_box_class_init (AdwTabBoxClass *klass)
 static void
 adw_tab_box_init (AdwTabBox *self)
 {
+  gtk_widget_set_overflow (GTK_WIDGET (self), GTK_OVERFLOW_HIDDEN);
 }
 
 void

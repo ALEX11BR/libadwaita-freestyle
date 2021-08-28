@@ -3089,17 +3089,7 @@ get_n_columns (AdwTabListBase *self,
   if (!WRAP || for_width < 0)
     return priv->n_tabs;
 
-  for (l = priv->tabs; l; l = l->next) {
-    TabInfo *info = l->data;
-    int child_width;
-
-    gtk_widget_measure (GTK_WIDGET (info->tab), GTK_ORIENTATION_HORIZONTAL, -1,
-                        NULL, &child_width, NULL, NULL);
-
-    tab_width = MAX (tab_width, child_width);
-  }
-
-  return (int) floor ((double) for_width / tab_width);
+  return CLAMP ((int) ceil ((double) for_width / 300.0), 1, 8);
 }
 
 static void
@@ -3158,8 +3148,12 @@ adw_tab_list_base_measure (GtkWidget      *widget,
       for (l = priv->tabs; l; l = l->next) {
         TabInfo *info = l->data;
         int child_height;
+        int child_width = -1;
 
-        gtk_widget_measure (GTK_WIDGET (info->tab), orientation, -1,
+        if (for_size >= 0)
+          child_width = for_size / n_columns;
+
+        gtk_widget_measure (GTK_WIDGET (info->tab), orientation, child_width,
                             NULL, &child_height, NULL, NULL);
 
         min = MAX (min, child_height);
@@ -3280,14 +3274,15 @@ adw_tab_list_base_size_allocate (GtkWidget *widget,
   is_rtl = gtk_widget_get_direction (widget) == GTK_TEXT_DIR_RTL;
 
   if (WRAP) {
+    int n_columns = get_n_columns (self, width);
+
     tab_height = 0;
 
     for (l = priv->tabs; l; l = l->next) {
       TabInfo *info = l->data;
       int child_width, child_height;
 
-      gtk_widget_measure (GTK_WIDGET (info->tab), GTK_ORIENTATION_HORIZONTAL, -1,
-                          NULL, &child_width, NULL, NULL);
+      child_width = width / n_columns;
       gtk_widget_measure (GTK_WIDGET (info->tab), GTK_ORIENTATION_VERTICAL, child_width,
                           NULL, &child_height, NULL, NULL);
 

@@ -345,53 +345,38 @@ adw_tab_disconnect_page (AdwTabItem *item)
   g_signal_handlers_disconnect_by_func (page, update_loading, self);
 }
 
-static void
-adw_tab_measure (GtkWidget      *widget,
-                 GtkOrientation  orientation,
-                 int             for_size,
-                 int            *minimum,
-                 int            *natural,
-                 int            *minimum_baseline,
-                 int            *natural_baseline)
+static int
+adw_tab_measure_contents (AdwTabItem     *item,
+                          GtkOrientation  orientation,
+                          int             for_size)
 {
-  AdwTab *self = ADW_TAB (widget);
-  gboolean pinned = adw_tab_item_get_pinned (ADW_TAB_ITEM (self));
-  int min = 0, nat = 0;
+  AdwTab *self = ADW_TAB (item);
 
   if (orientation == GTK_ORIENTATION_HORIZONTAL) {
-    nat = pinned ? BASE_WIDTH_PINNED : BASE_WIDTH;
+    gboolean pinned = adw_tab_item_get_pinned (ADW_TAB_ITEM (self));
+
+    return pinned ? BASE_WIDTH_PINNED : BASE_WIDTH;
   } else {
-    int child_min, child_nat;
+    int nat = 0, child_nat;
 
     gtk_widget_measure (self->icon_stack, orientation, for_size,
-                        &child_min, &child_nat, NULL, NULL);
-    min = MAX (min, child_min);
+                        NULL, &child_nat, NULL, NULL);
     nat = MAX (nat, child_nat);
 
     gtk_widget_measure (self->title, orientation, for_size,
-                        &child_min, &child_nat, NULL, NULL);
-    min = MAX (min, child_min);
+                        NULL, &child_nat, NULL, NULL);
     nat = MAX (nat, child_nat);
 
     gtk_widget_measure (self->close_btn, orientation, for_size,
-                        &child_min, &child_nat, NULL, NULL);
-    min = MAX (min, child_min);
+                        NULL, &child_nat, NULL, NULL);
     nat = MAX (nat, child_nat);
 
     gtk_widget_measure (self->indicator_btn, orientation, for_size,
-                        &child_min, &child_nat, NULL, NULL);
-    min = MAX (min, child_min);
+                        NULL, &child_nat, NULL, NULL);
     nat = MAX (nat, child_nat);
-  }
 
-  if (minimum)
-    *minimum = min;
-  if (natural)
-    *natural = nat;
-  if (minimum_baseline)
-    *minimum_baseline = -1;
-  if (natural_baseline)
-    *natural_baseline = -1;
+    return nat;
+  }
 }
 
 static inline void
@@ -425,10 +410,11 @@ allocate_child (GtkWidget     *child,
 }
 
 static void
-allocate_contents (AdwTab        *self,
-                   GtkAllocation *alloc,
-                   int            baseline)
+adw_tab_allocate_contents (AdwTabItem    *item,
+                           GtkAllocation *alloc,
+                           int            baseline)
 {
+  AdwTab *self = ADW_TAB (item);
   int indicator_width, close_width, icon_width, title_width;
   int center_x, center_width = 0;
   int start_width = 0, end_width = 0;
@@ -493,34 +479,6 @@ allocate_contents (AdwTab        *self,
 
   if (gtk_widget_get_visible (self->title))
     allocate_child (self->title, alloc, center_x, center_width, baseline);
-}
-
-static void
-adw_tab_size_allocate (GtkWidget *widget,
-                       int        width,
-                       int        height,
-                       int        baseline)
-{
-  AdwTab *self = ADW_TAB (widget);
-  int display_width = adw_tab_item_get_display_width (ADW_TAB_ITEM (self));
-  GtkAllocation child_alloc;
-  int allocated_width, width_diff;
-
-  if (!self->icon_stack ||
-      !self->indicator_btn ||
-      !self->title ||
-      !self->close_btn)
-    return;
-
-  allocated_width = gtk_widget_get_allocated_width (widget);
-  width_diff = MAX (0, display_width - allocated_width);
-
-  child_alloc.x = -width_diff / 2;
-  child_alloc.y = 0;
-  child_alloc.height = height;
-  child_alloc.width = width + width_diff;
-
-  allocate_contents (self, &child_alloc, baseline);
 }
 
 static void
@@ -664,8 +622,6 @@ adw_tab_class_init (AdwTabClass *klass)
   object_class->dispose = adw_tab_dispose;
   object_class->constructed = adw_tab_constructed;
 
-  widget_class->measure = adw_tab_measure;
-  widget_class->size_allocate = adw_tab_size_allocate;
   widget_class->map = adw_tab_map;
   widget_class->unmap = adw_tab_unmap;
   widget_class->snapshot = adw_tab_snapshot;
@@ -674,6 +630,8 @@ adw_tab_class_init (AdwTabClass *klass)
 
   item_class->connect_page = adw_tab_connect_page;
   item_class->disconnect_page = adw_tab_disconnect_page;
+  item_class->measure_contents = adw_tab_measure_contents;
+  item_class->allocate_contents = adw_tab_allocate_contents;
 
   gtk_widget_class_set_template_from_resource (widget_class,
                                                "/org/gnome/Adwaita/ui/adw-tab.ui");

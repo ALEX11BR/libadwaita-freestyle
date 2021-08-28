@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface domain="libadwaita">
+  <requires lib="gtk" version="4.0"/>
+  <template class="AdwTabThumbnail" parent="AdwTabItem">
+    <child>
+      <object class="GtkBox" id="contents">
+        <property name="orientation">vertical</property>
+        <property name="spacing">6</property>
+        <property name="vexpand">False</property>
+        <child>
+          <object class="GtkPicture" id="picture">
+            <property name="can-shrink">True</property>
+            <property name="keep-aspect-ratio">False</property>
+            <property name="overflow">hidden</property>
+            <property name="vexpand">True</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkLabel">
+            <property name="ellipsize">end</property>
+            <binding name="label">
+              <lookup name="title" type="AdwTabPage">
+                <lookup name="page">AdwTabThumbnail</lookup>
+              </lookup>
+            </binding>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+</interface>
