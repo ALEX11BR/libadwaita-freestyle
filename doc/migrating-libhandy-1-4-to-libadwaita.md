@@ -346,6 +346,10 @@ If you were using `@theme_selected_bg_color` as a text color, use
 `@accent_color` instead to make sure the text is readable. You can also use the
 `.accent` style class to apply the correct color.
 
+The `.selection-mode` style class no longer recolors headerbars. Instead
+of using the old styling, rework your selection modes to follow
+[the new pattern for selection modes](TODO: Link to HIG). 
+
 #### Make sure your sidebars have borders
 
 The `.sidebar` style class doesn't provide a border by default. Instead, use a
