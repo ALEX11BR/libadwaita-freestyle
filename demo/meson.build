@@ -12,6 +12,7 @@ adwaita_demo_resources = gnome.compile_resources(
 adwaita_demo_sources = [
   adwaita_demo_resources,
   'adwaita-demo.c',
+  'adw-demo-color-row.c',
   'adw-demo-preferences-window.c',
   'adw-demo-window.c',
   'adw-flap-demo-window.c',

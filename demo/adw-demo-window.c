@@ -1,6 +1,7 @@
 #include "adw-demo-window.h"
 
 #include <glib/gi18n.h>
+#include "adw-demo-color-row.h"
 #include "adw-flap-demo-window.h"
 #include "adw-style-demo-window.h"
 #include "adw-tab-view-demo-window.h"
@@ -37,6 +38,7 @@ struct _AdwDemoWindow
   GtkSwitch *timed_animation_alternate;
   GtkSpinButton *timed_animation_duration;
   AdwComboRow *timed_animation_easing;
+  GtkListBox *colors_list;
 };
 
 G_DEFINE_TYPE (AdwDemoWindow, adw_demo_window, ADW_TYPE_APPLICATION_WINDOW)
@@ -703,6 +705,14 @@ toast_dismiss_cb (AdwDemoWindow *self)
     adw_toast_dismiss (self->undo_toast);
 }
 
+static GtkWidget *
+color_row_create_cb (AdwEnumListItem *item)
+{
+  AdwColor color = adw_enum_list_item_get_value (item);
+
+  return GTK_WIDGET (adw_demo_color_row_new (color));
+}
+
 static void
 adw_demo_window_class_init (AdwDemoWindowClass *klass)
 {
@@ -741,6 +751,7 @@ adw_demo_window_class_init (AdwDemoWindowClass *klass)
   gtk_widget_class_bind_template_child (widget_class, AdwDemoWindow, timed_animation_alternate);
   gtk_widget_class_bind_template_child (widget_class, AdwDemoWindow, timed_animation_duration);
   gtk_widget_class_bind_template_child (widget_class, AdwDemoWindow, timed_animation_easing);
+  gtk_widget_class_bind_template_child (widget_class, AdwDemoWindow, colors_list);
   gtk_widget_class_bind_template_callback (widget_class, notify_visible_child_cb);
   gtk_widget_class_bind_template_callback (widget_class, back_clicked_cb);
   gtk_widget_class_bind_template_callback (widget_class, leaflet_back_clicked_cb);
@@ -853,6 +864,17 @@ animation_page_init (AdwDemoWindow *self)
 }
 
 static void
+recoloring_page_init (AdwDemoWindow *self)
+{
+  AdwEnumListModel *model = adw_enum_list_model_new (ADW_TYPE_COLOR);
+
+  gtk_list_box_bind_model (self->colors_list,
+                           G_LIST_MODEL (model),
+                           (GtkListBoxCreateWidgetFunc) color_row_create_cb,
+                           NULL, NULL);
+}
+
+static void
 adw_demo_window_init (AdwDemoWindow *self)
 {
   AdwStyleManager *manager = adw_style_manager_get_default ();
@@ -868,6 +890,8 @@ adw_demo_window_init (AdwDemoWindow *self)
   notify_system_supports_color_schemes_cb (self);
 
   avatar_page_init (self);
+
+  recoloring_page_init (self);
 
   adw_leaflet_set_visible_child (self->content_box, GTK_WIDGET (self->right_box));
 
